@@ -10,6 +10,39 @@ type CommissionRow = {
   profiles: { full_name: string | null } | null;
 };
 
+function normalizeCommissionRows(data: unknown[] | null): CommissionRow[] {
+  if (!data) return [];
+
+  return data.map((item) => {
+    const row = item as {
+      id: string;
+      split_role: string;
+      split_percent: number | string;
+      commission_amount: number | string;
+      deals?: { business_name?: string | null; funded_date?: string | null } | null;
+      profiles?: { full_name?: string | null } | null;
+    };
+
+    return {
+      id: row.id,
+      split_role: row.split_role,
+      split_percent: row.split_percent,
+      commission_amount: row.commission_amount,
+      deals: row.deals
+        ? {
+            business_name: row.deals.business_name ?? null,
+            funded_date: row.deals.funded_date ?? null
+          }
+        : null,
+      profiles: row.profiles
+        ? {
+            full_name: row.profiles.full_name ?? null
+          }
+        : null
+    };
+  });
+}
+
 export default async function CommissionsPage() {
   const { profile } = await requireUser();
   const supabase = createClient();
@@ -20,7 +53,7 @@ export default async function CommissionsPage() {
     .order('created_at', { ascending: false });
   if (profile.role === 'rep') query = query.eq('rep_id', profile.id);
   const { data } = await query;
-  const rows: CommissionRow[] = (data ?? []) as CommissionRow[];
+  const rows = normalizeCommissionRows(data as unknown[] | null);
 
   return (
     <div className="space-y-4">

@@ -11,6 +11,32 @@ type HotLeadRow = {
   profiles: { full_name: string | null } | null;
 };
 
+function normalizeHotLeadRows(data: unknown[] | null): HotLeadRow[] {
+  if (!data) return [];
+
+  return data.map((item) => {
+    const row = item as {
+      id: string;
+      business_name: string;
+      owner_name: string;
+      next_follow_up_date?: string | null;
+      profiles?: { full_name?: string | null } | null;
+    };
+
+    return {
+      id: row.id,
+      business_name: row.business_name,
+      owner_name: row.owner_name,
+      next_follow_up_date: row.next_follow_up_date ?? null,
+      profiles: row.profiles
+        ? {
+            full_name: row.profiles.full_name ?? null
+          }
+        : null
+    };
+  });
+}
+
 export default async function HotLeadsPage() {
   const { profile } = await requireUser();
   const supabase = createClient();
@@ -20,7 +46,7 @@ export default async function HotLeadsPage() {
     .order('created_at', { ascending: false });
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
   const { data } = await query;
-  const leads: HotLeadRow[] = (data ?? []) as HotLeadRow[];
+  const leads = normalizeHotLeadRows(data as unknown[] | null);
 
   return (
     <div className="space-y-4">
