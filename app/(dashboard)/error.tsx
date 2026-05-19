@@ -1,9 +1,9 @@
 'use client';
 
-import { MissingProfileError } from '@/lib/auth';
+import { isMissingProfileError } from '@/lib/auth-errors';
 
 export default function DashboardError({ error }: { error: Error & { digest?: string } }) {
-  if (error instanceof MissingProfileError || error.name === 'MissingProfileError') {
+  if (isMissingProfileError(error)) {
     return (
       <div className="mx-auto max-w-2xl space-y-4 rounded-lg border border-amber-200 bg-amber-50 p-6 text-amber-900">
         <h1 className="text-xl font-semibold">Profile setup issue</h1>
@@ -16,8 +16,11 @@ export default function DashboardError({ error }: { error: Error & { digest?: st
 
   return (
     <div className="mx-auto max-w-2xl space-y-4 rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
-      <h1 className="text-xl font-semibold">Something went wrong</h1>
-      <p>We could not load this page right now. Please try again.</p>
+      <h1 className="text-xl font-semibold">Unable to load dashboard</h1>
+      <p>
+        We could not load your dashboard right now. Please refresh, and if this keeps happening contact support with the approximate
+        time of this error.
+      </p>
     </div>
   );
 }

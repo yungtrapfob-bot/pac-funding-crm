@@ -1,13 +1,7 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { MissingProfileError } from '@/lib/auth-errors';
 import type { UserRole } from '@/types/db';
-
-export class MissingProfileError extends Error {
-  constructor() {
-    super('Your account is authenticated, but no profile was found. Please contact support.');
-    this.name = 'MissingProfileError';
-  }
-}
 
 export async function requireUser() {
   const supabase = createClient();
@@ -16,10 +10,20 @@ export async function requireUser() {
     error: userError
   } = await supabase.auth.getUser();
 
-  if (userError || !user) redirect('/login');
+  if (userError || !user) {
+    // If the session cannot be resolved on the server, treat as signed out.
+    redirect('/login');
+  }
 
   const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-  if (profileError || !profile) throw new MissingProfileError();
+
+  if (profileError || !profile) {
+    console.error('[auth] missing profile for authenticated user', {
+      userId: user.id,
+      profileError: profileError?.message ?? null
+    });
+    throw new MissingProfileError();
+  }
 
   return { user, profile: profile as { role: UserRole; full_name: string; id: string } };
 }
