@@ -5,7 +5,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function HotLeadsPage() {
   const { profile } = await requireUser();
-  const supabase = createClient();
+  const supabase = await createClient();
   type HotLeadRowWithProfile = {
     id: string;
     business_name: string | null;

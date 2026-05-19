@@ -24,7 +24,7 @@ const hotLeadSchema = z.object({
 });
 
 export async function createHotLead(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -43,7 +43,7 @@ export async function createHotLead(formData: FormData) {
 }
 
 export async function createDeal(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user }
   } = await supabase.auth.getUser();
@@ -102,7 +102,7 @@ export async function createDeal(formData: FormData) {
 }
 
 export async function addOffer(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const payload = Object.fromEntries(formData);
 
   const { error } = await supabase.from('offers').insert({
@@ -124,7 +124,7 @@ export async function addOffer(formData: FormData) {
 }
 
 export async function updateDealStage(formData: FormData) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const payload = Object.fromEntries(formData);
   const isFunded = payload.current_stage === 'Funded';
 

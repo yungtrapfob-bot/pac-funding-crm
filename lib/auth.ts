@@ -4,7 +4,7 @@ import { MissingProfileError, ProfileQueryError } from '@/lib/auth-errors';
 import type { UserRole } from '@/types/db';
 
 export async function requireUser() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
     error: userError
@@ -18,6 +18,16 @@ export async function requireUser() {
   const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
 
   if (profileError) {
+    const detailedMessage = [
+      'Your account is authenticated, but your CRM profile query failed.',
+      `Supabase: ${profileError.message}`,
+      profileError.code ? `code=${profileError.code}` : null,
+      profileError.details ? `details=${profileError.details}` : null,
+      profileError.hint ? `hint=${profileError.hint}` : null
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
     console.error('[auth] failed to query profile for authenticated user', {
       userId: user.id,
       profileError: profileError.message,
@@ -25,7 +35,7 @@ export async function requireUser() {
       profileErrorDetails: profileError.details ?? null,
       profileErrorHint: profileError.hint ?? null
     });
-    throw new ProfileQueryError();
+    throw new ProfileQueryError(detailedMessage);
   }
 
   if (!profile) {
