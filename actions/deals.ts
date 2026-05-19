@@ -4,146 +4,33 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { addBusinessDays, calculateFiftyPercentPaidDate } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
 
-const hotLeadSchema = z.object({
-  business_name: z.string().min(2),
-  owner_name: z.string().min(2),
-  phone: z.string().min(7),
-  email: z.string().email(),
-  industry: z.string().min(2),
-  monthly_revenue: z.coerce.number().nonnegative(),
-  time_in_business_months: z.coerce.number().nonnegative(),
-  state: z.string().min(2),
-  positions: z.coerce.number().nonnegative(),
-  nsf_count: z.coerce.number().nonnegative(),
-  deposits: z.coerce.number().nonnegative(),
-  fico: z.coerce.number().min(300).max(850),
-  notes: z.string().optional(),
-  next_follow_up_date: z.string().optional(),
-  follow_up_status: followUpStatusSchema.default('pending'),
-  outcome_tag: z.string().optional()
-});
+const hotLeadSchema = z.object({ business_name: z.string().min(2), owner_name: z.string().min(2), phone: z.string().min(7), email: z.string().email(), industry: z.string().min(2), monthly_revenue: z.coerce.number().nonnegative(), time_in_business_months: z.coerce.number().nonnegative(), state: z.string().min(2), positions: z.coerce.number().nonnegative(), nsf_count: z.coerce.number().nonnegative(), deposits: z.coerce.number().nonnegative(), fico: z.coerce.number().min(300).max(850), notes: z.string().optional(), next_follow_up_at: z.string().optional(), follow_up_status: followUpStatusSchema.default('pending'), outcome_tag: z.string().optional() });
+export type HotLeadFormState = { status: 'idle' | 'error'; message?: string; fieldErrors?: Record<string, string[] | undefined> };
 
-export type HotLeadFormState = {
-  status: 'idle' | 'error';
-  message?: string;
-  fieldErrors?: Record<string, string[] | undefined>;
-};
+export async function createHotLead(_: HotLeadFormState, formData: FormData): Promise<HotLeadFormState> { const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return { status: 'error', message: 'Unauthorized' }; const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData)); if (!parsed.success) return { status: 'error', message: 'Please fix the highlighted fields.', fieldErrors: parsed.error.flatten().fieldErrors }; const { next_follow_up_at, ...rest } = parsed.data; const { data: lead, error } = await supabase.from('hot_leads').insert({ ...rest, next_follow_up_at: next_follow_up_at ? new Date(next_follow_up_at).toISOString() : null, assigned_rep_id: user.id, last_contact_date: new Date().toISOString().slice(0, 10) }).select('id').single(); if (error || !lead) return { status: 'error', message: error?.message ?? 'Failed to create lead.' }; revalidatePath('/dashboard'); revalidatePath('/hot-leads'); redirect(`/hot-leads/${lead.id}?created=1`); }
 
-export async function createHotLead(_: HotLeadFormState, formData: FormData): Promise<HotLeadFormState> {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return { status: 'error', message: 'Unauthorized' };
+export async function updateHotLead(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const { error } = await supabase.from('hot_leads').update({ business_name: p.business_name, owner_name: p.owner_name, phone: p.phone, email: p.email, follow_up_status: followUpStatusSchema.parse(p.follow_up_status), next_follow_up_at: p.next_follow_up_at ? new Date(String(p.next_follow_up_at)).toISOString() : null, notes: p.notes, outcome_tag: p.outcome_tag, last_contact_date: new Date().toISOString().slice(0, 10) }).eq('id', String(p.id)); if (error) throw new Error(error.message); revalidatePath('/hot-leads'); revalidatePath(`/hot-leads/${p.id}`); }
 
-  const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) {
-    return { status: 'error', message: 'Please fix the highlighted fields.', fieldErrors: parsed.error.flatten().fieldErrors };
-  }
-
-  const { next_follow_up_date, ...rest } = parsed.data;
-  const normalizedFollowUpDate = next_follow_up_date ? new Date(next_follow_up_date).toISOString() : null;
-  const { data: lead, error } = await supabase.from('hot_leads').insert({
-    ...rest,
-    next_follow_up_date: normalizedFollowUpDate,
-    assigned_rep_id: user.id,
-    last_contact_date: new Date().toISOString().slice(0, 10)
-  }).select('id').single();
-
-  if (error || !lead) return { status: 'error', message: error?.message ?? 'Failed to create lead.' };
-
-  revalidatePath('/dashboard');
-  revalidatePath('/hot-leads/new');
-  revalidatePath('/hot-leads');
-  redirect(`/hot-leads/${lead.id}?created=1`);
-}
-
-export async function updateHotLead(formData: FormData) {
-  const supabase = await createClient();
-  const payload = Object.fromEntries(formData);
-  const { error } = await supabase
-    .from('hot_leads')
-    .update({
-      business_name: payload.business_name,
-      owner_name: payload.owner_name,
-      phone: payload.phone,
-      email: payload.email,
-      follow_up_status: followUpStatusSchema.parse(payload.follow_up_status),
-      next_follow_up_date: payload.next_follow_up_date ? new Date(String(payload.next_follow_up_date)).toISOString() : null,
-      notes: payload.notes,
-      last_contact_date: new Date().toISOString().slice(0, 10)
-    })
-    .eq('id', String(payload.id));
-  if (error) throw new Error(error.message);
-
-  revalidatePath('/hot-leads');
-  revalidatePath(`/hot-leads/${payload.id}`);
-  revalidatePath('/dashboard');
-}
+export async function convertHotLeadToDeal(formData: FormData) { const supabase = await createClient(); const leadId = String(formData.get('hot_lead_id')); const { data: lead, error } = await supabase.from('hot_leads').select('*').eq('id', leadId).single(); if (error || !lead) throw new Error('Lead not found'); const { data: deal, error: dealErr } = await supabase.from('deals').insert({ business_name: lead.business_name, owner_name: lead.owner_name, phone: lead.phone, email: lead.email, industry: lead.industry, monthly_revenue: lead.monthly_revenue, time_in_business_months: lead.time_in_business_months, state: lead.state, positions: lead.positions, nsf_count: lead.nsf_count, deposits: lead.deposits, fico: lead.fico, notes: lead.notes, assigned_rep_id: lead.assigned_rep_id, current_stage: 'In Underwriting', converted_from_hot_lead_id: lead.id }).select('id').single(); if (dealErr || !deal) throw new Error(dealErr?.message ?? 'Failed to convert lead'); revalidatePath('/hot-leads'); revalidatePath('/deals'); redirect(`/deals/${deal.id}`); }
 
 export async function createDeal(formData: FormData) { /* unchanged */
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Unauthorized');
-  const payload = Object.fromEntries(formData);
-  const { data: deal, error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: user.id, current_stage: 'Application Submitted' }).select('id').single();
-  if (error || !deal) throw new Error(error?.message || 'Failed to create deal');
-  const appFile = formData.get('application_file') as File;
-  if (appFile?.size) {
-    const path = `${deal.id}/application-${Date.now()}-${appFile.name}`;
-    const upload = await supabase.storage.from('deal-files').upload(path, appFile, { upsert: true });
-    if (upload.error) throw new Error(upload.error.message);
-    await supabase.from('deal_files').insert({ deal_id: deal.id, file_type: 'application', path });
-  }
-  const bankFiles = formData.getAll('bank_statements') as File[];
-  for (const file of bankFiles) {
-    if (!file?.size) continue;
-    const path = `${deal.id}/statement-${Date.now()}-${file.name}`;
-    const upload = await supabase.storage.from('deal-files').upload(path, file, { upsert: true });
-    if (upload.error) throw new Error(upload.error.message);
-    await supabase.from('deal_files').insert({ deal_id: deal.id, file_type: 'bank_statement', path });
-  }
-  await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/notify-processing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ dealId: deal.id }) });
-  revalidatePath('/dashboard');
-  revalidatePath('/deals');
-}
+ const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) throw new Error('Unauthorized'); const payload = Object.fromEntries(formData); const { error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: user.id, current_stage: 'In Underwriting' }); if (error) throw new Error(error.message); revalidatePath('/deals'); }
 
 export async function updateDealDetails(formData: FormData) {
-  const supabase = await createClient();
-  const payload = Object.fromEntries(formData);
-  const { error } = await supabase
-    .from('deals')
-    .update({
-      notes: payload.notes,
-      internal_notes: payload.internal_notes,
-      funded_amount: Number(payload.funded_amount ?? 0),
-      gross_commission: Number(payload.gross_commission ?? 0),
-      gross_psf: Number(payload.gross_psf ?? 0)
-    })
-    .eq('id', String(payload.deal_id));
-  if (error) throw new Error(error.message);
-  revalidatePath(`/deals/${payload.deal_id}`);
-  revalidatePath('/admin/pipeline');
+ const supabase = await createClient(); const p = Object.fromEntries(formData);
+ const fundedDate = p.funded_date ? String(p.funded_date) : null;
+ const fiftyDate = calculateFiftyPercentPaidDate({ fundedDate, termPayments: Number(p.selected_offer_term_payments || 0), paymentFrequency: String(p.selected_offer_payment_frequency || '') });
+ const commissionDate = fundedDate ? addBusinessDays(fundedDate, 30) : null;
+ const { error } = await supabase.from('deals').update({ notes: p.notes, internal_notes: p.internal_notes, current_stage: p.current_stage, application_complete: p.application_complete === 'on', docs_collected: p.docs_collected === 'on', submission_ready: p.submission_ready === 'on', underwriting_notes: p.underwriting_notes, dl_received: p.dl_received === 'on', voided_check_received: p.voided_check_received === 'on', contracts_sent_date: p.contracts_sent_date || null, funded_date: fundedDate, funded_amount: Number(p.funded_amount || 0), gross_commission: Number(p.gross_commission || 0), kif_reason: p.kif_reason || null, commission_payout_date: commissionDate, fifty_percent_paid_date: fiftyDate, renewal_eligibility_date: fiftyDate }).eq('id', String(p.deal_id));
+ if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); revalidatePath('/admin/pipeline'); revalidatePath('/dashboard');
 }
 
-export async function addOffer(formData: FormData) {
-  const supabase = await createClient();
-  const payload = Object.fromEntries(formData);
-  const { error } = await supabase.from('offers').insert({ deal_id: payload.deal_id, funder: payload.funder, approval_amount: Number(payload.approval_amount), term: payload.term, payment_frequency: payload.payment_frequency, factor_rate: Number(payload.factor_rate), payment_amount: Number(payload.payment_amount), stipulations: payload.stipulations, expiration_date: payload.expiration_date, notes: payload.notes, status: payload.status });
-  if (error) throw new Error(error.message);
-  revalidatePath(`/deals/${payload.deal_id}`);
-}
+export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const { error } = await supabase.from('offers').insert({ deal_id: p.deal_id, funder: p.funder, approval_amount: Number(p.approval_amount), term: p.term, payment_frequency: p.payment_frequency, factor_rate: Number(p.factor_rate), payment_amount: Number(p.payment_amount), total_payback: Number(p.total_payback || 0), term_payments: Number(p.term_payments || 0), stipulations: p.stipulations, decision: p.decision, decline_reason: p.decline_reason, notes: p.notes, status: 'open' }); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); }
 
-export async function updateDealStage(formData: FormData) {
-  const supabase = await createClient();
-  const payload = Object.fromEntries(formData);
-  const isFunded = payload.current_stage === 'Funded';
-  const { error } = await supabase.from('deals').update({ current_stage: payload.current_stage, funded_date: isFunded ? new Date().toISOString().slice(0, 10) : null }).eq('id', String(payload.deal_id));
-  if (error) throw new Error(error.message);
-  if (isFunded) await supabase.rpc('sync_commissions_for_deal', { target_deal_id: payload.deal_id });
-  revalidatePath(`/deals/${payload.deal_id}`);
-  revalidatePath('/admin/pipeline');
-  revalidatePath('/deals');
-  revalidatePath('/dashboard');
-}
+export async function selectOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const offerId = String(p.offer_id); const dealId = String(p.deal_id); await supabase.from('offers').update({ selected_at: null }).eq('deal_id', dealId); const { error } = await supabase.from('offers').update({ selected_at: new Date().toISOString(), status: 'accepted' }).eq('id', offerId); if (error) throw new Error(error.message); await supabase.from('deals').update({ selected_offer_id: offerId }).eq('id', dealId); revalidatePath(`/deals/${dealId}`); }
+
+export async function updateDealStage(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const { error } = await supabase.from('deals').update({ current_stage: p.current_stage }).eq('id', String(p.deal_id)); if (error) throw new Error(error.message); revalidatePath('/admin/pipeline'); revalidatePath('/deals'); revalidatePath('/dashboard'); }

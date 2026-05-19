@@ -1,14 +1,6 @@
 export type UserRole = 'admin' | 'rep';
 
-export type PipelineStage =
-  | 'Application Submitted'
-  | 'Application Processed'
-  | 'Offers / Declines Received'
-  | 'Deal Pitched'
-  | 'Contracts Requested'
-  | 'Contracts Signed'
-  | 'Funded'
-  | 'Killed';
+export type PipelineStage = 'In Underwriting' | 'Offers' | 'Contracts Out' | 'KIF' | 'Funded';
 
 export type OfferStatus = 'open' | 'accepted' | 'declined' | 'expired';
 

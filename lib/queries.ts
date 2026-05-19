@@ -11,16 +11,15 @@ export async function getDeals(role: UserRole, userId: string) {
 
 export async function getDashboardMetrics(role: UserRole, userId: string) {
   const deals = await getDeals(role, userId);
-  const approvals = deals.filter((d) => ['Offers / Declines Received', 'Deal Pitched', 'Contracts Requested', 'Contracts Signed', 'Funded'].includes(d.current_stage));
   const funded = deals.filter((d) => d.current_stage === 'Funded');
-  const killed = deals.filter((d) => d.current_stage === 'Killed');
-
+  const kif = deals.filter((d) => d.current_stage === 'KIF');
   return {
-    submitted: deals.length,
-    approvals: approvals.length,
-    openDeals: deals.filter((d) => !['Funded', 'Killed'].includes(d.current_stage)).length,
+    totalDeals: deals.length,
+    underwriting: deals.filter((d) => d.current_stage === 'In Underwriting').length,
+    offers: deals.filter((d) => d.current_stage === 'Offers').length,
+    contractsOut: deals.filter((d) => d.current_stage === 'Contracts Out').length,
     fundedDeals: funded.length,
-    killedDeals: killed.length,
+    kifDeals: kif.length,
     fundedAmount: funded.reduce((sum, d) => sum + Number(d.funded_amount ?? 0), 0)
   };
 }
