@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { requiredPublicEnv } from '@/lib/env';
 
 export async function middleware(req: NextRequest) {
-  const res = NextResponse.next();
+  let res = NextResponse.next({
+    request: {
+      headers: req.headers
+    }
+  });
   const supabase = createServerClient(
     requiredPublicEnv('NEXT_PUBLIC_SUPABASE_URL'),
     requiredPublicEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY'),
@@ -13,9 +17,21 @@ export async function middleware(req: NextRequest) {
           return req.cookies.get(name)?.value;
         },
         set(name: string, value: string, options: CookieOptions) {
+          req.cookies.set({ name, value, ...options });
+          res = NextResponse.next({
+            request: {
+              headers: req.headers
+            }
+          });
           res.cookies.set({ name, value, ...options });
         },
         remove(name: string, options: CookieOptions) {
+          req.cookies.set({ name, value: '', ...options });
+          res = NextResponse.next({
+            request: {
+              headers: req.headers
+            }
+          });
           res.cookies.set({ name, value: '', ...options });
         }
       }
@@ -37,11 +53,15 @@ export async function middleware(req: NextRequest) {
   }
 
   if (!user && isAppRoute) {
-    return NextResponse.redirect(new URL('/login', req.url));
+    const redirectResponse = NextResponse.redirect(new URL('/login', req.url));
+    res.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
   }
 
   if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
+    const redirectResponse = NextResponse.redirect(new URL('/dashboard', req.url));
+    res.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+    return redirectResponse;
   }
 
   if (user && req.nextUrl.pathname.startsWith('/admin')) {
@@ -55,7 +75,9 @@ export async function middleware(req: NextRequest) {
       return res;
     }
     if (profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', req.url));
+      const redirectResponse = NextResponse.redirect(new URL('/dashboard', req.url));
+      res.cookies.getAll().forEach((cookie) => redirectResponse.cookies.set(cookie));
+      return redirectResponse;
     }
   }
 

@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { MissingProfileError, ProfileQueryError } from '@/lib/auth-errors';
+import { MissingProfileError, ProfileQueryError, buildProfileQueryErrorMessage } from '@/lib/auth-errors';
 import type { UserRole } from '@/types/db';
 
 export async function requireUser() {
@@ -25,7 +25,14 @@ export async function requireUser() {
       profileErrorDetails: profileError.details ?? null,
       profileErrorHint: profileError.hint ?? null
     });
-    throw new ProfileQueryError();
+    throw new ProfileQueryError(
+      buildProfileQueryErrorMessage({
+        message: profileError.message,
+        code: profileError.code ?? null,
+        details: profileError.details ?? null,
+        hint: profileError.hint ?? null
+      })
+    );
   }
 
   if (!profile) {
