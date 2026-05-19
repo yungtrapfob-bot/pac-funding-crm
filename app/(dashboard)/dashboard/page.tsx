@@ -13,8 +13,8 @@ export default async function RepDashboardPage() {
 
   let leadsQuery = supabase
     .from('hot_leads')
-    .select('id,business_name,owner_name,phone,email,follow_up_status,next_follow_up_at,submission_ready')
-    .order('next_follow_up_at', { ascending: true, nullsFirst: false })
+    .select('id,business_name,owner_name,phone,email,follow_up_status,next_follow_up_date,submission_ready')
+    .order('next_follow_up_date', { ascending: true, nullsFirst: false })
     .limit(10);
   if (profile.role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', profile.id);
   const { data: leads } = await leadsQuery;
@@ -40,7 +40,7 @@ export default async function RepDashboardPage() {
             <h2 className="text-lg font-medium">Follow-up Tasks</h2>
             <Link href="/hot-leads" className="text-sm text-primary hover:underline">Open full queue</Link>
           </div>
-          {!leads?.length ? <p className="text-sm text-muted-foreground">No upcoming follow-up tasks.</p> : <div className="space-y-2">{leads.map((lead) => <Link key={lead.id} href={`/hot-leads/${lead.id}`} className="block rounded-md border border-border p-2 text-sm hover:bg-muted/40"><p className="font-medium text-primary">{lead.business_name}</p><p className="text-muted-foreground">{lead.owner_name} · {lead.phone || lead.email || 'No contact info'}</p><p>{lead.follow_up_status} · {lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : 'No due date'}</p></Link>)}</div>}
+          {!leads?.length ? <p className="text-sm text-muted-foreground">No upcoming follow-up tasks.</p> : <div className="space-y-2">{leads.map((lead) => <Link key={lead.id} href={`/hot-leads/${lead.id}`} className="block rounded-md border border-border p-2 text-sm hover:bg-muted/40"><p className="font-medium text-primary">{lead.business_name}</p><p className="text-muted-foreground">{lead.owner_name} · {lead.phone || lead.email || 'No contact info'}</p><p>{lead.follow_up_status} · {lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : 'No due date'}</p></Link>)}</div>}
         </Card>
 
         <section className="space-y-2">

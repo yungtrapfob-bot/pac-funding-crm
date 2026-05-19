@@ -15,7 +15,7 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
   const funded = deals.filter((d) => d.current_stage === 'Funded');
   const kif = deals.filter((d) => d.current_stage === 'KIF');
 
-  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_at,submission_ready');
+  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,submission_ready');
   if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
   const { data: leads } = await leadsQuery;
 
@@ -27,11 +27,11 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
 
   const hotLeads = leads ?? [];
   const dueToday = hotLeads.filter((l) => {
-    if (!l.next_follow_up_at) return false;
-    const date = new Date(l.next_follow_up_at);
+    if (!l.next_follow_up_date) return false;
+    const date = new Date(l.next_follow_up_date);
     return date >= start && date <= end;
   }).length;
-  const overdueFollowups = hotLeads.filter((l) => l.next_follow_up_at && new Date(l.next_follow_up_at) < start).length;
+  const overdueFollowups = hotLeads.filter((l) => l.next_follow_up_date && new Date(l.next_follow_up_date) < start).length;
 
   return {
     totalDeals: deals.length,

@@ -53,7 +53,7 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
           <select name="follow_up_status" defaultValue={lead.follow_up_status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
             <option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option>
           </select>
-          <Input type="datetime-local" name="next_follow_up_at" defaultValue={formatDateTimeLocal(lead.next_follow_up_at)} />
+          <Input type="datetime-local" name="next_follow_up_date" defaultValue={formatDateTimeLocal(lead.next_follow_up_date)} />
           <Input name="outcome_tag" defaultValue={lead.outcome_tag ?? ''} placeholder="Outcome tag (interested, docs requested, not qualified, etc.)" className="md:col-span-2" />
           <textarea name="notes" defaultValue={lead.notes ?? ''} placeholder="Call notes, objections, docs requested, callback context, and underwriting readiness." className="min-h-56 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
           <Button type="submit" className="md:col-span-2">Save lead updates</Button>

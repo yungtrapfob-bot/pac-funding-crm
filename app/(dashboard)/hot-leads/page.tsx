@@ -36,7 +36,7 @@ export default async function HotLeadsPage({
   }
 
   if (sort === 'newest_created') query = query.order('created_at', { ascending: false });
-  else query = query.order('next_follow_up_at', { ascending: true, nullsFirst: false });
+  else query = query.order('next_follow_up_date', { ascending: true, nullsFirst: false });
 
   const { data } = await query;
   let hotLeads = data ?? [];
@@ -44,8 +44,8 @@ export default async function HotLeadsPage({
   if (sort === 'stale_followups') {
     const now = Date.now();
     hotLeads = hotLeads
-      .filter((lead) => lead.next_follow_up_at && new Date(lead.next_follow_up_at).getTime() < now)
-      .sort((a, b) => new Date(a.next_follow_up_at).getTime() - new Date(b.next_follow_up_at).getTime());
+      .filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < now)
+      .sort((a, b) => new Date(a.next_follow_up_date).getTime() - new Date(b.next_follow_up_date).getTime());
   }
 
   return (
@@ -99,7 +99,7 @@ export default async function HotLeadsPage({
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
                   <td className="p-2">{lead.follow_up_status}</td>
-                  <td className="p-2">{lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : '—'}</td>
+                  <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>
                   <td className="max-w-xs truncate p-2 text-muted-foreground">{lead.notes || '—'}</td>
                 </tr>
