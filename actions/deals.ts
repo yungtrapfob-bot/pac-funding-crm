@@ -1,8 +1,11 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+
+const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
 
 const hotLeadSchema = z.object({
   business_name: z.string().min(2),
@@ -19,28 +22,41 @@ const hotLeadSchema = z.object({
   fico: z.coerce.number().min(300).max(850),
   notes: z.string().optional(),
   next_follow_up_date: z.string().optional(),
-  follow_up_status: z.string().default('pending'),
+  follow_up_status: followUpStatusSchema.default('pending'),
   outcome_tag: z.string().optional()
 });
 
-export async function createHotLead(formData: FormData) {
-  const supabase = await createClient();
-  const {
-    data: { user }
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error('Unauthorized');
+export type HotLeadFormState = {
+  status: 'idle' | 'error';
+  message?: string;
+  fieldErrors?: Record<string, string[] | undefined>;
+};
 
-  const parsed = hotLeadSchema.parse(Object.fromEntries(formData));
-  const { error } = await supabase.from('hot_leads').insert({
-    ...parsed,
+export async function createHotLead(_: HotLeadFormState, formData: FormData): Promise<HotLeadFormState> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { status: 'error', message: 'Unauthorized' };
+
+  const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) {
+    return { status: 'error', message: 'Please fix the highlighted fields.', fieldErrors: parsed.error.flatten().fieldErrors };
+  }
+
+  const { next_follow_up_date, ...rest } = parsed.data;
+  const normalizedFollowUpDate = next_follow_up_date ? new Date(next_follow_up_date).toISOString() : null;
+  const { data: lead, error } = await supabase.from('hot_leads').insert({
+    ...rest,
+    next_follow_up_date: normalizedFollowUpDate,
     assigned_rep_id: user.id,
     last_contact_date: new Date().toISOString().slice(0, 10)
-  });
-  if (error) throw new Error(error.message);
+  }).select('id').single();
+
+  if (error || !lead) return { status: 'error', message: error?.message ?? 'Failed to create lead.' };
 
   revalidatePath('/dashboard');
   revalidatePath('/hot-leads/new');
   revalidatePath('/hot-leads');
+  redirect(`/hot-leads/${lead.id}?created=1`);
 }
 
 export async function updateHotLead(formData: FormData) {
@@ -53,8 +69,8 @@ export async function updateHotLead(formData: FormData) {
       owner_name: payload.owner_name,
       phone: payload.phone,
       email: payload.email,
-      follow_up_status: payload.follow_up_status,
-      next_follow_up_date: payload.next_follow_up_date || null,
+      follow_up_status: followUpStatusSchema.parse(payload.follow_up_status),
+      next_follow_up_date: payload.next_follow_up_date ? new Date(String(payload.next_follow_up_date)).toISOString() : null,
       notes: payload.notes,
       last_contact_date: new Date().toISOString().slice(0, 10)
     })
