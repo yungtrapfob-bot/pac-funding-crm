@@ -18,19 +18,29 @@ export default function LoginForm() {
     e.preventDefault();
     setError(null);
     setIsSubmitting(true);
+    try {
+      const supabase = createClient();
+      const signInResult = await Promise.race([
+        supabase.auth.signInWithPassword({ email, password }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Sign-in request timed out. Please try again.')), 15000);
+        })
+      ]);
+      const { error: signInError } = signInResult;
 
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) {
+        setError(signInError.message);
+        return;
+      }
 
-    setIsSubmitting(false);
-
-    if (signInError) {
-      setError(signInError.message);
-      return;
+      router.replace('/dashboard');
+      router.refresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unexpected sign-in error.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    router.replace('/dashboard');
-    router.refresh();
   }
 
   async function sendMagicLink() {
