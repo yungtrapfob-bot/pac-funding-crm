@@ -1,6 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { MissingProfileError } from '@/lib/auth-errors';
+import { MissingProfileError, ProfileQueryError } from '@/lib/auth-errors';
 import type { UserRole } from '@/types/db';
 
 export async function requireUser() {
@@ -15,12 +15,22 @@ export async function requireUser() {
     redirect('/login');
   }
 
-  const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+  const { data: profile, error: profileError } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
 
-  if (profileError || !profile) {
-    console.error('[auth] missing profile for authenticated user', {
+  if (profileError) {
+    console.error('[auth] failed to query profile for authenticated user', {
       userId: user.id,
-      profileError: profileError?.message ?? null
+      profileError: profileError.message,
+      profileErrorCode: profileError.code ?? null,
+      profileErrorDetails: profileError.details ?? null,
+      profileErrorHint: profileError.hint ?? null
+    });
+    throw new ProfileQueryError();
+  }
+
+  if (!profile) {
+    console.error('[auth] missing profile row for authenticated user', {
+      userId: user.id
     });
     throw new MissingProfileError();
   }
