@@ -23,11 +23,18 @@ export async function middleware(req: NextRequest) {
   );
 
   const {
-    data: { user }
+    data: { user },
+    error: userError
   } = await supabase.auth.getUser();
 
   const isAuthRoute = req.nextUrl.pathname.startsWith('/login');
   const isAppRoute = req.nextUrl.pathname.startsWith('/dashboard') || req.nextUrl.pathname.startsWith('/hot-leads') || req.nextUrl.pathname.startsWith('/deals') || req.nextUrl.pathname.startsWith('/commissions') || req.nextUrl.pathname.startsWith('/admin');
+
+  // If middleware cannot confidently determine auth state (network, refresh, etc.),
+  // do not force redirects that can create loops.
+  if (userError) {
+    return res;
+  }
 
   if (!user && isAppRoute) {
     return NextResponse.redirect(new URL('/login', req.url));
