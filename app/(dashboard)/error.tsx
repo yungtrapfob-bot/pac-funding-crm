@@ -1,6 +1,7 @@
 'use client';
 
 import { isMissingProfileError } from '@/lib/auth-errors';
+import { isProfileQueryError } from '@/lib/auth-errors';
 
 export default function DashboardError({ error }: { error: Error & { digest?: string } }) {
   if (isMissingProfileError(error)) {
@@ -9,6 +10,18 @@ export default function DashboardError({ error }: { error: Error & { digest?: st
         <h1 className="text-xl font-semibold">Profile setup issue</h1>
         <p>
           You are signed in, but your user profile could not be loaded. Please contact support so your account can be completed.
+        </p>
+      </div>
+    );
+  }
+
+  if (isProfileQueryError(error)) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-4 rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
+        <h1 className="text-xl font-semibold">Profile access issue</h1>
+        <p>
+          You are signed in, but we could not verify access to your CRM profile. Please refresh once, and if this continues contact
+          support and mention a profile access error.
         </p>
       </div>
     );
