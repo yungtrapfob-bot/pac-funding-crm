@@ -6,8 +6,9 @@ import { cn } from '@/lib/utils';
 
 const commonLinks = [
   { href: '/dashboard', label: 'Dashboard' },
+  { href: '/hot-leads', label: 'Hot Leads / Tasks' },
   { href: '/hot-leads/new', label: 'New Hot Lead' },
-  { href: '/deals/new', label: 'Submit Deal' },
+  { href: '/deals', label: 'Deals Pipeline' },
   { href: '/commissions', label: 'My Commissions' }
 ];
 

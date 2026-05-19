@@ -4,19 +4,111 @@ import { Input } from '@/components/ui/input';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
-export default async function HotLeadsPage({ searchParams }: { searchParams: { q?: string; status?: string } }) {
+type SortMode = 'followup_soonest' | 'newest_created' | 'stale_followups';
+
+function getSortLabel(sort: SortMode) {
+  if (sort === 'newest_created') return 'Newest created';
+  if (sort === 'stale_followups') return 'Stale follow-ups';
+  return 'Next follow-up soonest';
+}
+
+export default async function HotLeadsPage({
+  searchParams
+}: {
+  searchParams: { q?: string; status?: string; sort?: string; outcome?: string };
+}) {
   const { profile } = await requireUser();
   const supabase = await createClient();
   const q = searchParams.q?.trim() ?? '';
   const status = searchParams.status?.trim() ?? '';
-  let query = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)').order('created_at', { ascending: false });
+  const outcome = searchParams.outcome?.trim() ?? '';
+  const sort = (searchParams.sort?.trim() as SortMode) || 'followup_soonest';
+
+  let query = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)');
+
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
   if (status) query = query.eq('follow_up_status', status);
-  if (q) query = query.or(`business_name.ilike.%${q}%,owner_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
-  const { data } = await query;
-  const hotLeads = data ?? [];
+  if (outcome) query = query.eq('outcome_tag', outcome);
+  if (q) {
+    query = query.or(
+      `business_name.ilike.%${q}%,owner_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%,notes.ilike.%${q}%`
+    );
+  }
 
-  return <div className="space-y-4"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Hot Leads</h1><Link href="/hot-leads/new" className="rounded-md bg-primary px-3 py-2 text-sm text-white">New lead</Link></div>
-  <Card><form className="grid grid-cols-1 gap-2 md:grid-cols-4"><Input name="q" defaultValue={q} placeholder="Search business, owner, email, phone"/><select name="status" defaultValue={status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="">All statuses</option><option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option></select><button className="rounded-md border border-border px-3 py-2 text-sm">Filter</button></form></Card>
-  <Card className="overflow-x-auto p-0">{!hotLeads.length ? <p className="p-6 text-sm">No leads found for this filter.</p> : <table className="w-full text-sm"><thead className="bg-muted/40 text-left"><tr><th className="p-2">Business</th><th className="p-2">Owner</th><th className="p-2">Phone</th><th className="p-2">Email</th><th className="p-2">Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th></tr></thead><tbody>{hotLeads.map((lead) => <tr key={lead.id} className="border-t border-border"><td className="p-2"><Link href={`/hot-leads/${lead.id}`} className="text-primary hover:underline">{lead.business_name}</Link></td><td className="p-2">{lead.owner_name}</td><td className="p-2">{lead.phone || '—'}</td><td className="p-2">{lead.email || '—'}</td><td className="p-2">{lead.follow_up_status}</td><td className="p-2">{lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : '—'}</td><td className="p-2">{lead.outcome_tag || '—'}</td></tr>)}</tbody></table>}</Card></div>;
+  if (sort === 'newest_created') query = query.order('created_at', { ascending: false });
+  else query = query.order('next_follow_up_at', { ascending: true, nullsFirst: false });
+
+  const { data } = await query;
+  let hotLeads = data ?? [];
+
+  if (sort === 'stale_followups') {
+    const now = Date.now();
+    hotLeads = hotLeads
+      .filter((lead) => lead.next_follow_up_at && new Date(lead.next_follow_up_at).getTime() < now)
+      .sort((a, b) => new Date(a.next_follow_up_at).getTime() - new Date(b.next_follow_up_at).getTime());
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold">Hot Leads / Tasks</h1>
+          <p className="text-sm text-muted-foreground">Rep call queue for follow-ups, callbacks, and submission readiness.</p>
+        </div>
+        <Link href="/hot-leads/new" className="rounded-md bg-primary px-3 py-2 text-sm text-white">
+          New lead
+        </Link>
+      </div>
+
+      <Card>
+        <form className="grid grid-cols-1 gap-2 md:grid-cols-5">
+          <Input name="q" defaultValue={q} placeholder="Search business, owner, phone, email, notes" />
+          <select name="status" defaultValue={status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+            <option value="">All statuses</option>
+            <option value="pending">pending</option>
+            <option value="contacted">contacted</option>
+            <option value="scheduled">scheduled</option>
+            <option value="stale">stale</option>
+          </select>
+          <Input name="outcome" defaultValue={outcome} placeholder="Outcome tag" />
+          <select name="sort" defaultValue={sort} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+            <option value="followup_soonest">Next follow-up soonest</option>
+            <option value="newest_created">Newest created</option>
+            <option value="stale_followups">Stale follow-ups</option>
+          </select>
+          <button className="rounded-md border border-border px-3 py-2 text-sm">Filter Queue</button>
+        </form>
+      </Card>
+
+      <Card className="overflow-x-auto p-0">
+        {!hotLeads.length ? (
+          <p className="p-6 text-sm">No leads found for this queue view.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-left">
+              <tr>
+                <th className="p-2">Business</th><th className="p-2">Owner</th><th className="p-2">Phone</th><th className="p-2">Email</th>
+                <th className="p-2">Follow-up Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th><th className="p-2">Notes Preview</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hotLeads.map((lead) => (
+                <tr key={lead.id} className="border-t border-border hover:bg-muted/20">
+                  <td className="p-2"><Link href={`/hot-leads/${lead.id}`} className="font-medium text-primary hover:underline">{lead.business_name}</Link></td>
+                  <td className="p-2">{lead.owner_name}</td>
+                  <td className="p-2">{lead.phone || '—'}</td>
+                  <td className="p-2">{lead.email || '—'}</td>
+                  <td className="p-2">{lead.follow_up_status}</td>
+                  <td className="p-2">{lead.next_follow_up_at ? new Date(lead.next_follow_up_at).toLocaleString() : '—'}</td>
+                  <td className="p-2">{lead.outcome_tag || '—'}</td>
+                  <td className="max-w-xs truncate p-2 text-muted-foreground">{lead.notes || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      <p className="text-xs text-muted-foreground">Sorted by: {getSortLabel(sort)}</p>
+    </div>
+  );
 }
