@@ -14,15 +14,22 @@ function formatDateTimeLocal(value?: string | null) {
 export default async function HotLeadDetail({ params }: { params: { id: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
-  let q = supabase
+  let leadQuery = supabase
     .from('hot_leads')
-    .select('*, profiles:assigned_rep_id(full_name), deals(id,current_stage)')
+    .select('*, profiles:assigned_rep_id(full_name)')
     .eq('id', params.id);
-  if (profile.role === 'rep') q = q.eq('assigned_rep_id', profile.id);
-  const { data: lead } = await q.single();
+  if (profile.role === 'rep') leadQuery = leadQuery.eq('assigned_rep_id', profile.id);
+
+  const { data: lead } = await leadQuery.maybeSingle();
   if (!lead) return <p>Lead not found.</p>;
 
-  const convertedDeal = Array.isArray(lead.deals) ? lead.deals[0] : null;
+  const { data: convertedDeal } = await supabase
+    .from('deals')
+    .select('id,current_stage')
+    .eq('hot_lead_id', lead.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
   return (
     <div className="space-y-4">
