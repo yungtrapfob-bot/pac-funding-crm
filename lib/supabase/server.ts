@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { requiredEnv } from '@/lib/env';
 
@@ -10,11 +10,19 @@ export function createClient() {
       get(name: string) {
         return cookieStore.get(name)?.value;
       },
-      set(name: string, value: string, options: Record<string, unknown>) {
-        cookieStore.set({ name, value, ...(options as object) });
+      set(name: string, value: string, options: CookieOptions) {
+        try {
+          cookieStore.set({ name, value, ...options });
+        } catch {
+          // Cookies can only be written in Server Actions / Route Handlers.
+        }
       },
-      remove(name: string, options: Record<string, unknown>) {
-        cookieStore.set({ name, value: '', ...(options as object) });
+      remove(name: string, options: CookieOptions) {
+        try {
+          cookieStore.set({ name, value: '', ...options });
+        } catch {
+          // Cookies can only be written in Server Actions / Route Handlers.
+        }
       }
     }
   });
