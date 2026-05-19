@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function DealDetailPage({ params }: { params: { id: string } }) {
   const { profile } = await requireUser();
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const dealQuery = supabase.from('deals').select('*').eq('id', params.id);
   if (profile.role === 'rep') dealQuery.eq('assigned_rep_id', profile.id);

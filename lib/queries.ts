@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import type { UserRole } from '@/types/db';
 
 export async function getDeals(role: UserRole, userId: string) {
-  const supabase = createClient();
+  const supabase = await createClient();
   let query = supabase.from('deals').select('*').order('submitted_at', { ascending: false });
   if (role === 'rep') query = query.eq('assigned_rep_id', userId);
   const { data } = await query;

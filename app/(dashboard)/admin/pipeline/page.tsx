@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function AdminPipelinePage() {
   await requireRole(['admin']);
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: deals } = await supabase.from('deals').select('*').order('submitted_at', { ascending: false });
 
   return (

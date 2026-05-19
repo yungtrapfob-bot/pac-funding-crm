@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function CommissionsPage() {
   const { profile } = await requireUser();
-  const supabase = createClient();
+  const supabase = await createClient();
   type CommissionRowWithRelations = {
     id: string;
     split_role: string | null;

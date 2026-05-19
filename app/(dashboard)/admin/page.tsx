@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function AdminDashboardPage() {
   await requireRole(['admin']);
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: deals } = await supabase.from('deals').select('*');
   const { data: offers } = await supabase.from('offers').select('approval_amount, status');
 

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export default async function UsersPage() {
   await requireRole(['admin']);
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: users } = await supabase.from('profiles').select('*').order('created_at');
 
   return (
