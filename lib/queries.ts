@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import type { UserRole } from '@/types/db';
+import { toUiPipelineStage } from '@/lib/utils';
 
 export async function getDeals(role: UserRole, userId: string) {
   const supabase = await createClient();
@@ -12,8 +13,8 @@ export async function getDeals(role: UserRole, userId: string) {
 export async function getDashboardMetrics(role: UserRole, userId: string) {
   const supabase = await createClient();
   const deals = await getDeals(role, userId);
-  const funded = deals.filter((d) => d.current_stage === 'Funded');
-  const kif = deals.filter((d) => d.current_stage === 'KIF');
+  const funded = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded');
+  const kif = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF');
 
   let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,submission_ready');
   if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
@@ -35,9 +36,9 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
 
   return {
     totalDeals: deals.length,
-    underwriting: deals.filter((d) => d.current_stage === 'In Underwriting').length,
-    offers: deals.filter((d) => d.current_stage === 'Offers').length,
-    contractsOut: deals.filter((d) => d.current_stage === 'Contracts Out').length,
+    underwriting: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'In Underwriting').length,
+    offers: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Offers').length,
+    contractsOut: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Contracts Out').length,
     fundedDeals: funded.length,
     kifDeals: kif.length,
     fundedAmount: funded.reduce((sum, d) => sum + Number(d.funded_amount ?? 0), 0),

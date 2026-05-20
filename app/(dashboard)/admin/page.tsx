@@ -1,6 +1,7 @@
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { toUiPipelineStage } from '@/lib/utils';
 
 export default async function AdminDashboardPage() {
   await requireRole(['admin']);
@@ -9,9 +10,9 @@ export default async function AdminDashboardPage() {
   const { data: offers } = await supabase.from('offers').select('approval_amount, status');
 
   const apps = deals?.length ?? 0;
-  const fundedDeals = deals?.filter((d) => d.current_stage === 'Funded').length ?? 0;
-  const killedDeals = deals?.filter((d) => d.current_stage === 'KIF').length ?? 0;
-  const contractsOut = deals?.filter((d) => d.current_stage === 'Contracts Out').length ?? 0;
+  const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
+  const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
+  const contractsOut = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Contracts Out').length ?? 0;
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
 
   return (
