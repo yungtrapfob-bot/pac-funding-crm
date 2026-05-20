@@ -19,12 +19,20 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   if (!deal) return <p>Deal not found.</p>;
 
   const { data: offers } = await supabase.from('offers').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
+  const { data: selectedOfferRow } = await supabase
+    .from('offers')
+    .select('*')
+    .eq('deal_id', params.id)
+    .eq('status', 'accepted')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const { data: files } = await supabase.from('deal_files').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
   const fileRows = await Promise.all((files ?? []).map(async (file) => {
     const { data } = await supabase.storage.from('deal-files').createSignedUrl(file.path, 60 * 60);
     return { ...file, signedUrl: data?.signedUrl ?? null };
   }));
-  const selected = (offers ?? []).find((o) => String(o.status ?? '').toLowerCase() === 'accepted') ?? null;
+  const selected = selectedOfferRow ?? (offers ?? []).find((o) => String(o.status ?? '').toLowerCase() === 'accepted') ?? null;
   const selectedSummary = selected
     ? [
       selected.funder || null,
