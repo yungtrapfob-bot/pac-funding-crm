@@ -8,7 +8,7 @@ import { requireUser } from '@/lib/auth';
 import { PIPELINE_STAGES } from '@/lib/utils';
 import { createClient } from '@/lib/supabase/server';
 
-export default async function DealDetailPage({ params }: { params: { id: string } }) {
+export default async function DealDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
   let q = supabase.from('deals').select('*').eq('id', params.id);
@@ -21,8 +21,15 @@ export default async function DealDetailPage({ params }: { params: { id: string 
   const { data: files } = await supabase.from('deal_files').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
   const selected = offers?.find((o) => o.id === deal.selected_offer_id);
 
+  const savedMessage = searchParams?.saved === 'workflow' ? 'Workflow details saved successfully.'
+    : searchParams?.saved === 'offer' ? 'Funder response saved successfully.'
+      : searchParams?.saved === 'selected_offer' ? 'Offer selected successfully.'
+        : searchParams?.saved === 'stage' ? 'Stage updated successfully.'
+          : null;
+
   return <div className="space-y-4">
     <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{deal.business_name}</h1><Badge>{deal.current_stage}</Badge></div>
+    {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
@@ -36,8 +43,11 @@ export default async function DealDetailPage({ params }: { params: { id: string 
       <p className="mt-3 text-sm text-muted-foreground">Offer selected: {selected ? selected.funder : '—'}</p>
     </Card>
 
+
+    <Card><h2 className="mb-2 text-lg font-medium">Selected Offer</h2>{selected ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm"><p className="font-semibold text-emerald-900">{selected.funder}</p><p>Amount: ${Number(selected.approval_amount || 0).toLocaleString()}</p><p>Term: {selected.term || '—'}</p><p>Payment Frequency: {selected.payment_frequency || '—'}</p><p>Factor: {selected.factor_rate ?? '—'}</p><p>Payment Amount: ${Number(selected.payment_amount || 0).toLocaleString()}</p><p>Total Payback: ${Number(selected.total_payback || 0).toLocaleString()}</p><p>Stipulations: {selected.stipulations || '—'}</p></div> : <p className="text-sm text-muted-foreground">No offer selected yet.</p>}</Card>
+
     <Card><h2 className="mb-2 text-lg font-medium">Funder Responses / Offers</h2><form action={addOffer} className="grid grid-cols-1 gap-2 md:grid-cols-4"><input type="hidden" name="deal_id" value={deal.id} /><Input name="funder" placeholder="Funder name" required /><select name="decision" className="rounded-md border px-3 py-2 text-sm"><option value="approval">Approval</option><option value="decline">Decline</option></select><Input name="decline_reason" placeholder="Decline reason" /><Input name="approval_amount" type="number" step="0.01" placeholder="Amount" required /><Input name="term" placeholder="Term text" /><Input name="term_payments" type="number" placeholder="# of payments" /><Input name="payment_frequency" placeholder="daily / weekly / biweekly / monthly" /><Input name="factor_rate" type="number" step="0.001" placeholder="Factor" /><Input name="payment_amount" type="number" step="0.01" placeholder="Payment amount" /><Input name="total_payback" type="number" step="0.01" placeholder="Total payback" /><Input name="stipulations" placeholder="Stipulations" /><Button type="submit">Add funder response</Button></form>
-      <div className="mt-4 space-y-2">{offers?.map((o) => <div key={o.id} className="rounded border p-3 text-sm"><p className="font-medium">{o.funder} · {o.status}{deal.selected_offer_id === o.id ? ' · Selected' : ''}</p><p>${Number(o.approval_amount || 0).toLocaleString()} · {o.term || '—'} · {o.payment_frequency || '—'}</p><p>Factor {o.factor_rate ?? '—'} · Payment ${Number(o.payment_amount || 0).toLocaleString()}</p><p>{o.notes || o.stipulations || '—'}</p><form action={selectOffer}><input type="hidden" name="deal_id" value={deal.id} /><input type="hidden" name="offer_id" value={o.id} /><Button type="submit">Select Offer</Button></form></div>)}</div>
+      <div className="mt-4 space-y-2">{offers?.map((o) => <div key={o.id} className={`rounded border p-3 text-sm ${deal.selected_offer_id === o.id ? 'border-emerald-400 bg-emerald-50' : ''}`}><p className="font-medium">{o.funder} · {o.status}{deal.selected_offer_id === o.id ? ' · Selected' : ''}</p><p>${Number(o.approval_amount || 0).toLocaleString()} · {o.term || '—'} · {o.payment_frequency || '—'}</p><p>Factor {o.factor_rate ?? '—'} · Payment ${Number(o.payment_amount || 0).toLocaleString()}</p><p>{o.notes || o.stipulations || '—'}</p><form action={selectOffer}><input type="hidden" name="deal_id" value={deal.id} /><input type="hidden" name="offer_id" value={o.id} /><Button type="submit" disabled={deal.selected_offer_id === o.id}>{deal.selected_offer_id === o.id ? 'Selected' : 'Select Offer'}</Button></form></div>)}</div>
     </Card>
 
     <Card><h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2><div className="space-y-2 text-sm">{files?.length ? files.map((f) => <p key={f.id}>{f.file_type}: {f.path}</p>) : <p className="text-muted-foreground">No files uploaded yet.</p>}</div></Card>
