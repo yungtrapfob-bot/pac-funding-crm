@@ -6,6 +6,38 @@ export function cn(...args: ClassValue[]) {
 
 export const PIPELINE_STAGES = ['In Underwriting', 'Offers', 'Contracts Out', 'KIF', 'Funded'] as const;
 
+export const UI_TO_DB_STAGE: Record<(typeof PIPELINE_STAGES)[number], string> = {
+  'In Underwriting': 'Application Submitted',
+  Offers: 'Offers / Declines Received',
+  'Contracts Out': 'Contracts Requested',
+  KIF: 'Killed',
+  Funded: 'Funded'
+};
+
+const DB_TO_UI_STAGE: Record<string, (typeof PIPELINE_STAGES)[number]> = {
+  'Application Submitted': 'In Underwriting',
+  'Application Processed': 'In Underwriting',
+  'In Underwriting': 'In Underwriting',
+  'Offers / Declines Received': 'Offers',
+  Offers: 'Offers',
+  'Deal Pitched': 'Offers',
+  'Contracts Requested': 'Contracts Out',
+  'Contracts Signed': 'Contracts Out',
+  'Contracts Out': 'Contracts Out',
+  Killed: 'KIF',
+  KIF: 'KIF',
+  Funded: 'Funded'
+};
+
+export function toDbPipelineStage(uiStage: (typeof PIPELINE_STAGES)[number]) {
+  return UI_TO_DB_STAGE[uiStage];
+}
+
+export function toUiPipelineStage(dbStage: string | null | undefined): (typeof PIPELINE_STAGES)[number] {
+  if (!dbStage) return 'In Underwriting';
+  return DB_TO_UI_STAGE[dbStage] ?? 'In Underwriting';
+}
+
 export function addBusinessDays(startDate: string, businessDays: number) {
   const date = new Date(startDate);
   let added = 0;
