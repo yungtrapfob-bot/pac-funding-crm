@@ -24,7 +24,9 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     const { data } = await supabase.storage.from('deal-files').createSignedUrl(file.path, 60 * 60);
     return { ...file, signedUrl: data?.signedUrl ?? null };
   }));
-  const selected = offers?.find((o) => o.status === 'accepted') ?? null;
+  const selected = (offers ?? []).find((o) => o.id === deal.selected_offer_id)
+    ?? (offers ?? []).find((o) => o.status === 'accepted')
+    ?? null;
 
   const savedMessage = searchParams?.saved === 'workflow' ? 'Workflow details saved successfully.'
     : searchParams?.saved === 'offer' ? 'Funder response saved successfully.'
