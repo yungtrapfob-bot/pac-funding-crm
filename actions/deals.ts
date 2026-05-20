@@ -4,7 +4,6 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { addBusinessDays, calculateFiftyPercentPaidDate } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
 
@@ -104,16 +103,12 @@ export async function updateDealDetails(formData: FormData) {
  const fundedDate = p.funded_date ? String(p.funded_date) : null;
  const fundedAmount = Number(p.funded_amount || 0);
  const grossCommission = Number(p.gross_commission || 0);
- const termPayments = Number(p.selected_offer_term_payments || 0);
- const paymentFrequency = String(p.selected_offer_payment_frequency || '');
- const fiftyDate = calculateFiftyPercentPaidDate({ fundedDate, termPayments, paymentFrequency });
- const commissionDate = fundedDate ? addBusinessDays(fundedDate, 30) : null;
- const updatePayload = { notes: p.notes, internal_notes: p.internal_notes, application_complete: p.application_complete === 'on', docs_collected: p.docs_collected === 'on', submission_ready: p.submission_ready === 'on', underwriting_notes: p.underwriting_notes, dl_received: p.dl_received === 'on', voided_check_received: p.voided_check_received === 'on', contracts_sent_date: p.contracts_sent_date || null, funded_date: fundedDate, funded_amount: Number.isFinite(fundedAmount) ? fundedAmount : 0, gross_commission: Number.isFinite(grossCommission) ? grossCommission : 0, kif_reason: p.kif_reason || null, commission_payout_date: commissionDate, fifty_percent_paid_date: fiftyDate, renewal_eligibility_date: fiftyDate };
+  const updatePayload = { notes: p.notes, internal_notes: p.internal_notes, funded_date: fundedDate, funded_amount: Number.isFinite(fundedAmount) ? fundedAmount : 0, gross_commission: Number.isFinite(grossCommission) ? grossCommission : 0 };
  const { error } = await supabase.from('deals').update(updatePayload).eq('id', String(p.deal_id));
  if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); revalidatePath('/admin/pipeline'); revalidatePath('/dashboard');
 }
 
-export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const totalPayback = p.total_payback ? Number(p.total_payback) : null; const termPayments = p.term_payments ? Number(p.term_payments) : null; const offerPayload = { deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, total_payback: totalPayback !== null && Number.isFinite(totalPayback) ? totalPayback : null, term_payments: termPayments !== null && Number.isFinite(termPayments) ? termPayments : null, stipulations: p.stipulations || null, decision: p.decision || 'approval', decline_reason: p.decline_reason || null, notes: p.notes || null, status: 'open' }; const { error } = await supabase.from('offers').insert(offerPayload); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); }
+export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const decision = String(p.decision || 'approval'); const status = decision === 'decline' ? 'declined' : 'open'; const declineReason = p.decline_reason ? `Decline reason: ${p.decline_reason}` : null; const offerPayload = { deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, stipulations: p.stipulations || null, notes: declineReason ?? (p.notes || null), status }; const { error } = await supabase.from('offers').insert(offerPayload); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); }
 
 export async function selectOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const offerId = String(p.offer_id); const dealId = String(p.deal_id); await supabase.from('offers').update({ selected_at: null }).eq('deal_id', dealId); const { error } = await supabase.from('offers').update({ selected_at: new Date().toISOString(), status: 'accepted' }).eq('id', offerId); if (error) throw new Error(error.message); await supabase.from('deals').update({ selected_offer_id: offerId }).eq('id', dealId); revalidatePath(`/deals/${dealId}`); }
 
