@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { convertHotLeadToDeal, updateHotLead } from '@/actions/deals';
+import { startHotLeadConversion, updateHotLead } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -26,7 +26,7 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
   const { data: convertedDeal } = await supabase
     .from('deals')
     .select('id,current_stage')
-    .eq('hot_lead_id', lead.id)
+    .eq('converted_from_hot_lead_id', lead.id)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -44,7 +44,7 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
               View Created Deal ({convertedDeal.current_stage})
             </Link>
           ) : (
-            <form action={convertHotLeadToDeal}>
+            <form action={startHotLeadConversion}>
               <input type="hidden" name="hot_lead_id" value={lead.id} />
               <Button type="submit">Convert to Deal / Send to Underwriting</Button>
             </form>
