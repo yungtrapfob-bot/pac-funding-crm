@@ -24,9 +24,15 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     const { data } = await supabase.storage.from('deal-files').createSignedUrl(file.path, 60 * 60);
     return { ...file, signedUrl: data?.signedUrl ?? null };
   }));
-  const selected = (offers ?? []).find((o) => o.id === deal.selected_offer_id)
-    ?? (offers ?? []).find((o) => o.status === 'accepted')
-    ?? null;
+  const selected = (offers ?? []).find((o) => String(o.status ?? '').toLowerCase() === 'accepted') ?? null;
+  const selectedSummary = selected
+    ? [
+      selected.funder || null,
+      selected.approval_amount ? `$${Number(selected.approval_amount).toLocaleString()}` : null,
+      selected.term || null,
+      selected.payment_frequency || null
+    ].filter(Boolean).join(' · ')
+    : null;
 
   const savedMessage = searchParams?.saved === 'workflow' ? 'Workflow details saved successfully.'
     : searchParams?.saved === 'offer' ? 'Funder response saved successfully.'
@@ -47,7 +53,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     <Card><h2 className="mb-2 text-lg font-medium">Stage Movement</h2><form action={updateDealStage} className="flex gap-2"><input type="hidden" name="deal_id" value={deal.id} /><select name="current_stage" defaultValue={toUiPipelineStage(deal.current_stage)} className="rounded-md border px-3 py-2 text-sm">{PIPELINE_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><Button type="submit">Move Stage</Button></form></Card>
 
     <Card><h2 className="mb-2 text-lg font-medium">Operational Checklist / Workflow Details</h2><form action={updateDealDetails} className="grid grid-cols-1 gap-2 md:grid-cols-3"><input type="hidden" name="deal_id" value={deal.id} /><Field label="Funded Date"><Input type="date" name="funded_date" defaultValue={deal.funded_date ?? ''} /></Field><Field label="Funded Amount"><Input type="number" step="0.01" name="funded_amount" defaultValue={deal.funded_amount ?? 0} /></Field><Field label="Gross Commission"><Input type="number" step="0.01" name="gross_commission" defaultValue={deal.gross_commission ?? 0} /></Field><Field label="Internal Notes"><textarea name="internal_notes" defaultValue={deal.internal_notes ?? ''} className="min-h-20 rounded-md border p-2 text-sm md:col-span-3" /></Field><Field label="Notes"><textarea name="notes" defaultValue={deal.notes ?? ''} className="min-h-20 rounded-md border p-2 text-sm md:col-span-3" /></Field><Button type="submit" className="md:col-span-3">Save workflow details</Button></form>
-      <p className="mt-3 text-sm text-muted-foreground">Offer selected: {selected ? selected.funder : '—'}</p>
+      <p className="mt-3 text-sm text-muted-foreground">Offer selected: {selectedSummary || '—'}</p>
     </Card>
 
 
