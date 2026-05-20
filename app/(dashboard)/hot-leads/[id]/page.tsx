@@ -23,13 +23,24 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
   const { data: lead } = await leadQuery.maybeSingle();
   if (!lead) return <p>Lead not found.</p>;
 
-  const { data: convertedDeal } = await supabase
-    .from('deals')
-    .select('id,current_stage')
-    .eq('converted_from_hot_lead_id', lead.id)
+  const { data: conversionActivity } = await supabase
+    .from('activities')
+    .select('deal_id')
+    .eq('hot_lead_id', lead.id)
+    .eq('activity_type', 'hot_lead_converted')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+
+  let convertedDeal: { id: string; current_stage: string } | null = null;
+  if (conversionActivity?.deal_id) {
+    const { data: linkedDeal } = await supabase
+      .from('deals')
+      .select('id,current_stage')
+      .eq('id', conversionActivity.deal_id)
+      .maybeSingle();
+    convertedDeal = linkedDeal;
+  }
 
   return (
     <div className="space-y-4">
