@@ -8,6 +8,20 @@ import { addBusinessDays, calculateFiftyPercentPaidDate } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
 
+async function getExistingColumns(supabase: Awaited<ReturnType<typeof createClient>>, table: string) {
+  const { data, error } = await supabase
+    .from('information_schema.columns')
+    .select('column_name')
+    .eq('table_schema', 'public')
+    .eq('table_name', table);
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((row) => String((row as { column_name: string }).column_name)));
+}
+
+function pickExistingColumns<T extends Record<string, unknown>>(payload: T, existingColumns: Set<string>) {
+  return Object.fromEntries(Object.entries(payload).filter(([key]) => existingColumns.has(key)));
+}
+
 const hotLeadSchema = z.object({ business_name: z.string().min(2), owner_name: z.string().min(2), phone: z.string().min(7), email: z.string().email(), industry: z.string().min(2), monthly_revenue: z.coerce.number().nonnegative(), time_in_business_months: z.coerce.number().nonnegative(), state: z.string().min(2), positions: z.coerce.number().nonnegative(), nsf_count: z.coerce.number().nonnegative(), deposits: z.coerce.number().nonnegative(), fico: z.coerce.number().min(300).max(850), notes: z.string().optional(), next_follow_up_date: z.string().optional(), follow_up_status: followUpStatusSchema.default('pending'), outcome_tag: z.string().optional() });
 export type HotLeadFormState = { status: 'idle' | 'error'; message?: string; fieldErrors?: Record<string, string[] | undefined> };
 
@@ -108,11 +122,13 @@ export async function updateDealDetails(formData: FormData) {
  const fiftyDate = calculateFiftyPercentPaidDate({ fundedDate, termPayments, paymentFrequency });
  const commissionDate = fundedDate ? addBusinessDays(fundedDate, 30) : null;
  const updatePayload = { notes: p.notes, internal_notes: p.internal_notes, application_complete: p.application_complete === 'on', docs_collected: p.docs_collected === 'on', submission_ready: p.submission_ready === 'on', underwriting_notes: p.underwriting_notes, dl_received: p.dl_received === 'on', voided_check_received: p.voided_check_received === 'on', contracts_sent_date: p.contracts_sent_date || null, funded_date: fundedDate, funded_amount: Number.isFinite(fundedAmount) ? fundedAmount : 0, gross_commission: Number.isFinite(grossCommission) ? grossCommission : 0, kif_reason: p.kif_reason || null, commission_payout_date: commissionDate, fifty_percent_paid_date: fiftyDate, renewal_eligibility_date: fiftyDate };
- const { error } = await supabase.from('deals').update(updatePayload).eq('id', String(p.deal_id));
+ const existingColumns = await getExistingColumns(supabase, 'deals');
+ const filteredPayload = pickExistingColumns(updatePayload, existingColumns);
+ const { error } = await supabase.from('deals').update(filteredPayload).eq('id', String(p.deal_id));
  if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); revalidatePath('/admin/pipeline'); revalidatePath('/dashboard');
 }
 
-export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const totalPayback = p.total_payback ? Number(p.total_payback) : null; const termPayments = p.term_payments ? Number(p.term_payments) : null; const { error } = await supabase.from('offers').insert({ deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, total_payback: totalPayback !== null && Number.isFinite(totalPayback) ? totalPayback : null, term_payments: termPayments !== null && Number.isFinite(termPayments) ? termPayments : null, stipulations: p.stipulations || null, decision: p.decision || 'approval', decline_reason: p.decline_reason || null, notes: p.notes || null, status: 'open' }); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); }
+export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const totalPayback = p.total_payback ? Number(p.total_payback) : null; const termPayments = p.term_payments ? Number(p.term_payments) : null; const offerPayload = { deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, total_payback: totalPayback !== null && Number.isFinite(totalPayback) ? totalPayback : null, term_payments: termPayments !== null && Number.isFinite(termPayments) ? termPayments : null, stipulations: p.stipulations || null, decision: p.decision || 'approval', decline_reason: p.decline_reason || null, notes: p.notes || null, status: 'open' }; const existingColumns = await getExistingColumns(supabase, 'offers'); const filteredPayload = pickExistingColumns(offerPayload, existingColumns); const { error } = await supabase.from('offers').insert(filteredPayload); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); }
 
 export async function selectOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const offerId = String(p.offer_id); const dealId = String(p.deal_id); await supabase.from('offers').update({ selected_at: null }).eq('deal_id', dealId); const { error } = await supabase.from('offers').update({ selected_at: new Date().toISOString(), status: 'accepted' }).eq('id', offerId); if (error) throw new Error(error.message); await supabase.from('deals').update({ selected_offer_id: offerId }).eq('id', dealId); revalidatePath(`/deals/${dealId}`); }
 
