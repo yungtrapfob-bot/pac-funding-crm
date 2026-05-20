@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
-import { addBusinessDays, calculateFiftyPercentPaidDate } from '@/lib/utils';
+import { addBusinessDays, calculateFiftyPercentPaidDate, PIPELINE_STAGES } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
 
@@ -58,7 +58,7 @@ export async function submitHotLeadConversion(
     notes: String(formData.get('notes') ?? ''),
     internal_notes: String(formData.get('internal_notes') ?? ''),
     assigned_rep_id: lead.assigned_rep_id,
-    current_stage: 'In Underwriting' as const
+    current_stage: PIPELINE_STAGES[0]
   };
 
   const { data: deal, error: dealError } = await supabase.from('deals').insert(payload).select('id').single();
