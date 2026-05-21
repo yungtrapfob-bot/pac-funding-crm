@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { requireUser } from '@/lib/auth';
-import { PIPELINE_STAGES, toUiPipelineStage } from '@/lib/utils';
+import { addBusinessDays, calculateFiftyPercentPaidDate, PIPELINE_STAGES, toUiPipelineStage } from '@/lib/utils';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
@@ -35,6 +35,23 @@ export default async function DealDetailPage({ params, searchParams }: { params:
       selected.payment_frequency || null
     ].filter(Boolean).join(' · ')
     : null;
+
+
+  const hasFundedDate = Boolean(deal.funded_date);
+  const calculatedCommissionPayoutDate = hasFundedDate ? addBusinessDays(String(deal.funded_date), 7) : null;
+  const commissionPayoutDate = deal.commission_payout_date || calculatedCommissionPayoutDate;
+  const calculatedFiftyPercentPaidDate = calculateFiftyPercentPaidDate({
+    fundedDate: deal.funded_date,
+    termPayments: selected?.term_payments ?? null,
+    paymentFrequency: selected?.payment_frequency ?? null
+  });
+  const renewalDateMessage = !hasFundedDate
+    ? 'Cannot calculate until funded date is set.'
+    : !selected
+      ? 'Cannot calculate until an offer is selected.'
+      : !selected.term_payments || !selected.payment_frequency
+        ? 'Cannot calculate until selected offer includes term payments and payment frequency.'
+        : null;
 
   const savedMessage = searchParams?.saved === 'workflow' ? 'Workflow details saved successfully.'
     : searchParams?.saved === 'offer' ? 'Funder response saved successfully.'
@@ -67,7 +84,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
 
     <Card><h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2><div className="space-y-2 text-sm">{fileRows.length ? fileRows.map((f) => <div key={f.id} className="rounded border p-3"><p className="font-medium">{f.file_type}</p><p className="break-all text-muted-foreground">{f.path}</p>{f.signedUrl ? <div className="mt-2"><Link href={f.signedUrl} target="_blank" className="text-primary underline">Open / Download</Link></div> : <p className="mt-2 text-xs text-muted-foreground">File link unavailable. Please re-open this page to refresh signed links.</p>}</div>) : <p className="text-muted-foreground">No files uploaded yet.</p>}</div></Card>
 
-    <Card><h2 className="mb-2 text-lg font-medium">Payout / Renewal Info</h2><p>Funded Amount: ${Number(deal.funded_amount || 0).toLocaleString()}</p><p>Funded Date: {deal.funded_date || '—'}</p><p>Commission Payout Date: {deal.commission_payout_date || 'Cannot calculate until funded date is set.'}</p></Card>
+    <Card><h2 className="mb-2 text-lg font-medium">Payout / Renewal Info</h2><p>Funded Amount: ${Number(deal.funded_amount || 0).toLocaleString()}</p><p>Funded Date: {deal.funded_date || '—'}</p><p>Commission Payout Date: {commissionPayoutDate || 'Cannot calculate until funded date is set.'}</p><p>50% Paid / Renewal Date: {calculatedFiftyPercentPaidDate || renewalDateMessage || '—'}</p><p className="mt-2 text-xs text-muted-foreground">Calculated from funded date and selected offer schedule when available.</p></Card>
   </div>;
 }
 
