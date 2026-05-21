@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <rect width="1600" height="900" fill="#f3f4f6"/>
+  <defs>
+    <g id="tile" transform="scale(0.6)">
+      <g transform="translate(0,0)">
+        <path d="M10 8h30l-18 18-12-12z" fill="#36c77b"/>
+        <path d="M8 10v30l18-18-18-12z" fill="#0e4b9f"/>
+        <path d="M40 8v30l-18-18 18-12z" fill="#0e4b9f"/>
+        <path d="M10 40h30l-18-18-12 18z" fill="#f0c84a"/>
+      </g>
+      <text x="60" y="34" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="700" fill="#2f3137">Paragon Alternative Capital</text>
+    </g>
+  </defs>
+  <g opacity="0.9">
+    <use href="#tile" x="20" y="20"/>
+    <use href="#tile" x="420" y="20"/>
+    <use href="#tile" x="820" y="20"/>
+    <use href="#tile" x="1220" y="20"/>
+    <use href="#tile" x="20" y="190"/>
+    <use href="#tile" x="420" y="190"/>
+    <use href="#tile" x="820" y="190"/>
+    <use href="#tile" x="1220" y="190"/>
+    <use href="#tile" x="20" y="360"/>
+    <use href="#tile" x="420" y="360"/>
+    <use href="#tile" x="820" y="360"/>
+    <use href="#tile" x="1220" y="360"/>
+    <use href="#tile" x="20" y="530"/>
+    <use href="#tile" x="420" y="530"/>
+    <use href="#tile" x="820" y="530"/>
+    <use href="#tile" x="1220" y="530"/>
+    <use href="#tile" x="20" y="700"/>
+    <use href="#tile" x="420" y="700"/>
+    <use href="#tile" x="820" y="700"/>
+    <use href="#tile" x="1220" y="700"/>
+  </g>
+</svg>

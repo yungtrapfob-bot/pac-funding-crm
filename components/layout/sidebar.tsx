@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -24,7 +25,16 @@ export function Sidebar({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <aside className="w-64 border-r border-border bg-card p-4">
-      <p className="mb-6 text-lg font-semibold">Paragon Arm</p>
+      <div className="mb-6 border-b border-border pb-4">
+        <Image
+          src="/brand/paragon-logo.svg"
+          alt="Paragon Alternative Capital"
+          width={300}
+          height={50}
+          className="h-auto w-full max-w-[230px]"
+          priority
+        />
+      </div>
       <nav className="space-y-1">
         {links.map((link) => (
           <Link
