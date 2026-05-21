@@ -77,17 +77,20 @@ export default function LoginForm() {
         className="object-cover"
       />
       <div className="absolute inset-0 bg-slate-100/75 backdrop-blur-[1px]" aria-hidden="true" />
-      <form onSubmit={onSubmit} className="relative z-10 w-full max-w-md space-y-4 rounded-lg border border-border bg-card/95 p-6 shadow-xl">
-        <div className="space-y-2">
+      <form onSubmit={onSubmit} className="relative z-10 w-full max-w-md space-y-4 rounded-xl border border-border bg-card/95 p-6 shadow-xl">
+        <div className="space-y-3 border-b border-border pb-4">
           <Image
             src="/brand/paragon-logo.svg"
             alt="Paragon Alternative Capital"
             width={360}
             height={62}
-            className="h-auto w-full max-w-[300px]"
+            className="h-auto w-full max-w-[320px]"
             priority
           />
-          <h1 className="text-xl font-semibold">Platform Login</h1>
+          <div>
+            <h1 className="text-xl font-semibold">Platform Login</h1>
+            <p className="text-sm text-muted-foreground">Sign in to continue to the Paragon Funding CRM.</p>
+          </div>
         </div>
         <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" required />
         <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" required />
