@@ -23,7 +23,7 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
   const { data: lead } = await leadQuery.maybeSingle();
   if (!lead) return <p>Lead not found.</p>;
 
-  const savedMessage = searchParams?.saved === '1'
+  const savedMessage = searchParams?.saved === 'hot_lead' || searchParams?.saved === '1'
     ? 'Lead updates saved successfully.'
     : searchParams?.created === '1'
       ? 'Hot lead created successfully.'
