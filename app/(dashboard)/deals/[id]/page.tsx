@@ -15,7 +15,9 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   let q = supabase.from('deals').select('*').eq('id', params.id);
   if (profile.role === 'rep') q = q.or(`assigned_rep_id.eq.${profile.id},closer_rep_id.eq.${profile.id}`);
 
-  const { data: deal } = await q.single();
+  const { data: dealRows, error: dealError } = await q.limit(1);
+  if (dealError) throw new Error(dealError.message);
+  const deal = dealRows?.[0] ?? null;
   if (!deal) return <p>Deal not found.</p>;
 
   const { data: offers } = await supabase.from('offers').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
