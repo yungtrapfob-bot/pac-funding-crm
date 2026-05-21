@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="88" viewBox="0 0 520 88" role="img" aria-labelledby="title">
+  <title>Paragon Alternative Capital</title>
+  <rect width="520" height="88" fill="#f3f4f6"/>
+  <g transform="translate(10,8)">
+    <path d="M10 8h30l-18 18-12-12z" fill="#36c77b"/>
+    <path d="M8 10v30l18-18-18-12z" fill="#0e4b9f"/>
+    <path d="M40 8v30l-18-18 18-12z" fill="#0e4b9f"/>
+    <path d="M10 40h30l-18-18-12 18z" fill="#f0c84a"/>
+  </g>
+  <text x="88" y="56" font-family="Inter, Arial, sans-serif" font-size="36" font-weight="700" fill="#2f3137">Paragon Alternative Capital</text>
+</svg>
