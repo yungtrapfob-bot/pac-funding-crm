@@ -11,7 +11,7 @@ function formatDateTimeLocal(value?: string | null) {
   return new Date(value).toISOString().slice(0, 16);
 }
 
-export default async function HotLeadDetail({ params }: { params: { id: string } }) {
+export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
   let leadQuery = supabase
@@ -22,6 +22,12 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
 
   const { data: lead } = await leadQuery.maybeSingle();
   if (!lead) return <p>Lead not found.</p>;
+
+  const savedMessage = searchParams?.saved === '1'
+    ? 'Lead updates saved successfully.'
+    : searchParams?.created === '1'
+      ? 'Hot lead created successfully.'
+      : null;
 
   const { data: conversionActivity } = await supabase
     .from('activities')
@@ -44,6 +50,7 @@ export default async function HotLeadDetail({ params }: { params: { id: string }
 
   return (
     <div className="space-y-4">
+      {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
