@@ -9,6 +9,14 @@ import { addBusinessDays, calculateFiftyPercentPaidDate, PIPELINE_STAGES, toUiPi
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
+
+function formatDisplayDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
 export default async function DealDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
@@ -40,11 +48,14 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   const hasFundedDate = Boolean(deal.funded_date);
   const calculatedCommissionPayoutDate = hasFundedDate ? addBusinessDays(String(deal.funded_date), 7) : null;
   const commissionPayoutDate = deal.commission_payout_date || calculatedCommissionPayoutDate;
+  const commissionPayoutDisplay = formatDisplayDate(commissionPayoutDate);
   const calculatedFiftyPercentPaidDate = calculateFiftyPercentPaidDate({
     fundedDate: deal.funded_date,
     termPayments: selected?.term_payments ?? null,
     paymentFrequency: selected?.payment_frequency ?? null
   });
+  const fiftyPercentPaidDisplay = formatDisplayDate(calculatedFiftyPercentPaidDate);
+
   const renewalDateMessage = !hasFundedDate
     ? 'Cannot calculate until funded date is set.'
     : !selected
@@ -84,7 +95,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
 
     <Card><h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2><div className="space-y-2 text-sm">{fileRows.length ? fileRows.map((f) => <div key={f.id} className="rounded border p-3"><p className="font-medium">{f.file_type}</p><p className="break-all text-muted-foreground">{f.path}</p>{f.signedUrl ? <div className="mt-2"><Link href={f.signedUrl} target="_blank" className="text-primary underline">Open / Download</Link></div> : <p className="mt-2 text-xs text-muted-foreground">File link unavailable. Please re-open this page to refresh signed links.</p>}</div>) : <p className="text-muted-foreground">No files uploaded yet.</p>}</div></Card>
 
-    <Card><h2 className="mb-2 text-lg font-medium">Payout / Renewal Info</h2><p>Funded Amount: ${Number(deal.funded_amount || 0).toLocaleString()}</p><p>Funded Date: {deal.funded_date || '—'}</p><p>Commission Payout Date: {commissionPayoutDate || 'Cannot calculate until funded date is set.'}</p><p>50% Paid / Renewal Date: {calculatedFiftyPercentPaidDate || renewalDateMessage || '—'}</p><p className="mt-2 text-xs text-muted-foreground">Calculated from funded date and selected offer schedule when available.</p></Card>
+    <Card><h2 className="mb-2 text-lg font-medium">Payout / Renewal Info</h2><p>Funded Amount: ${Number(deal.funded_amount || 0).toLocaleString()}</p><p>Funded Date: {formatDisplayDate(deal.funded_date) || '—'}</p><p>Commission Payout Date: {commissionPayoutDisplay || 'Cannot calculate until funded date is set.'}</p><p>50% Paid / Renewal Date: {fiftyPercentPaidDisplay || renewalDateMessage || '—'}</p><p className="mt-2 text-xs text-muted-foreground">Calculated from funded date and selected offer schedule when available.</p></Card>
   </div>;
 }
 
