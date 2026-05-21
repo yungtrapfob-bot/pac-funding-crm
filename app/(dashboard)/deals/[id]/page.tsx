@@ -10,6 +10,16 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 
 
+
+function parseTermPayments(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) return Math.floor(value);
+  if (typeof value !== 'string') return null;
+  const match = value.match(/\d+/);
+  if (!match) return null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
+}
+
 function formatDisplayDate(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -49,9 +59,10 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   const calculatedCommissionPayoutDate = hasFundedDate ? addBusinessDays(String(deal.funded_date), 7) : null;
   const commissionPayoutDate = deal.commission_payout_date || calculatedCommissionPayoutDate;
   const commissionPayoutDisplay = formatDisplayDate(commissionPayoutDate);
+  const selectedTermPayments = parseTermPayments(selected?.term_payments ?? selected?.term ?? null);
   const calculatedFiftyPercentPaidDate = calculateFiftyPercentPaidDate({
     fundedDate: deal.funded_date,
-    termPayments: selected?.term_payments ?? null,
+    termPayments: selectedTermPayments,
     paymentFrequency: selected?.payment_frequency ?? null
   });
   const fiftyPercentPaidDisplay = formatDisplayDate(calculatedFiftyPercentPaidDate);
@@ -60,8 +71,8 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     ? 'Cannot calculate until funded date is set.'
     : !selected
       ? 'Cannot calculate until an offer is selected.'
-      : !selected.term_payments || !selected.payment_frequency
-        ? 'Cannot calculate until selected offer includes term payments and payment frequency.'
+      : !selectedTermPayments || !selected?.payment_frequency
+        ? 'Cannot calculate until selected offer includes a numeric term/payment count and payment frequency.'
         : null;
 
   const savedMessage = searchParams?.saved === 'workflow' ? 'Workflow details saved successfully.'
