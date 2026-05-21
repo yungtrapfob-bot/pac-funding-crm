@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -21,21 +21,11 @@ const adminLinks = [
   { href: '/admin/users', label: 'Users' }
 ];
 
-export function Sidebar({
-  isAdmin,
-  userName,
-  userEmail,
-  userRole
-}: {
-  isAdmin: boolean;
-  userName: string;
-  userEmail: string;
-  userRole: string;
-}) {
+export function Sidebar({ isAdmin, userName, userEmail, userRole }: { isAdmin: boolean; userName: string; userEmail: string; userRole: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
-  const links = isAdmin ? [...commonLinks, ...adminLinks] : commonLinks;
+  const links = useMemo(() => (isAdmin ? [...commonLinks, ...adminLinks] : commonLinks), [isAdmin]);
 
   async function handleSignOut() {
     setIsSigningOut(true);
@@ -49,43 +39,28 @@ export function Sidebar({
   }
 
   return (
-    <aside className="flex w-72 flex-col border-r border-border bg-card p-5">
-      <div className="mb-6 rounded-xl border border-border/80 bg-background/70 p-4 shadow-sm">
+    <aside className="sticky top-0 flex h-screen w-72 shrink-0 flex-col border-r border-border bg-card/95 p-5">
+      <div className="rounded-xl border border-border/90 bg-background/90 p-4 shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-14 shrink-0 items-center justify-center rounded-md bg-muted/40 p-1.5">
-            <Image
-              src="/brand/paragon-logo.svg"
-              alt="Paragon Alternative Capital"
-              width={220}
-              height={60}
-              className="h-full w-full object-contain"
-              priority
-            />
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 p-2">
+            <Image src="/brand/paragon-logo.svg" alt="Paragon Alternative Capital" width={160} height={48} className="h-full w-full object-contain" priority />
           </div>
           <div className="min-w-0">
-            <p className="text-sm font-semibold leading-tight text-foreground">Paragon Alternative Capital</p>
-            <p className="mt-1 truncate text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Funding CRM Platform</p>
+            <p className="truncate text-sm font-semibold leading-tight text-foreground">Paragon Alternative Capital</p>
+            <p className="mt-1 truncate text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">Funding CRM Platform</p>
           </div>
         </div>
       </div>
 
-      <div className="mb-3 px-1">
-        <div className="h-px bg-border/80" aria-hidden="true" />
-      </div>
-
-      <nav className="space-y-1">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={cn(
-              'block rounded-md px-3 py-2 text-sm',
-              pathname === link.href ? 'bg-primary text-white' : 'hover:bg-muted'
-            )}
-          >
-            {link.label}
-          </Link>
-        ))}
+      <nav className="mt-5 space-y-1.5">
+        {links.map((link) => {
+          const active = pathname === link.href || (link.href !== '/dashboard' && pathname?.startsWith(`${link.href}/`));
+          return (
+            <Link key={link.href} href={link.href} className={cn('block rounded-md border px-3 py-2 text-sm transition-colors', active ? 'border-primary/30 bg-primary text-white' : 'border-transparent hover:border-border hover:bg-muted')}>
+              {link.label}
+            </Link>
+          );
+        })}
       </nav>
 
       <div className="mt-auto space-y-3 border-t border-border pt-4">

@@ -13,8 +13,8 @@ export function DealsTable({ deals }: { deals: DealRow[] }) {
   if (!deals.length) return <p className="rounded-md border border-dashed border-border p-6 text-sm">No deals yet.</p>;
 
   return (
-    <div className="overflow-hidden rounded-md border border-border">
-      <table className="w-full text-sm">
+    <div className="overflow-x-auto rounded-md border border-border">
+      <table className="w-full min-w-[640px] text-sm">
         <thead className="bg-muted/40 text-left">
           <tr>
             <th className="p-2">Business</th>

@@ -13,11 +13,13 @@ export default function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(searchParams.get('error'));
+  const [notice, setNotice] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setIsSubmitting(true);
     try {
       const supabase = createClient();
@@ -46,6 +48,7 @@ export default function LoginForm() {
 
   async function sendMagicLink() {
     setError(null);
+    setNotice(null);
     if (!email) {
       setError('Enter your email first to receive a magic link.');
       return;
@@ -64,7 +67,7 @@ export default function LoginForm() {
       return;
     }
 
-    setError('Magic link sent. Check your inbox and spam folder.');
+    setNotice('Magic link sent. Check your inbox and spam folder.');
   }
 
   return (
@@ -77,15 +80,15 @@ export default function LoginForm() {
         className="object-cover"
       />
       <div className="absolute inset-0 bg-slate-100/75 backdrop-blur-[1px]" aria-hidden="true" />
-      <form onSubmit={onSubmit} className="relative z-10 w-full max-w-md space-y-4 rounded-xl border border-border bg-card/95 p-6 shadow-xl">
+      <form onSubmit={onSubmit} className="relative z-10 w-full max-w-md space-y-4 rounded-2xl border border-border/90 bg-card/95 p-6 shadow-2xl">
         <div className="space-y-3 border-b border-border pb-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-14 shrink-0 items-center justify-center rounded-md bg-muted/40 p-1.5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/30 p-2">
               <Image
                 src="/brand/paragon-logo.svg"
                 alt="Paragon Alternative Capital"
-                width={220}
-                height={60}
+                width={160}
+                height={48}
                 className="h-full w-full object-contain"
                 priority
               />
@@ -99,7 +102,8 @@ export default function LoginForm() {
         </div>
         <Input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="Email" required />
         <Input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="Password" required />
-        {error && <p className="text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {notice && <p className="text-sm text-emerald-700">{notice}</p>}
         <Button type="submit" className="w-full" disabled={isSubmitting}>
           {isSubmitting ? 'Signing in...' : 'Sign In'}
         </Button>
