@@ -79,14 +79,19 @@ export default function LoginForm() {
       <div className="absolute inset-0 bg-slate-100/75 backdrop-blur-[1px]" aria-hidden="true" />
       <form onSubmit={onSubmit} className="relative z-10 w-full max-w-md space-y-4 rounded-xl border border-border bg-card/95 p-6 shadow-xl">
         <div className="space-y-3 border-b border-border pb-4">
-          <Image
-            src="/brand/paragon-logo.svg"
-            alt="Paragon Alternative Capital"
-            width={360}
-            height={62}
-            className="h-auto w-full max-w-[320px]"
-            priority
-          />
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-14 shrink-0 items-center justify-center rounded-md bg-muted/40 p-1.5">
+              <Image
+                src="/brand/paragon-logo.svg"
+                alt="Paragon Alternative Capital"
+                width={220}
+                height={60}
+                className="h-full w-full object-contain"
+                priority
+              />
+            </div>
+            <p className="text-sm font-semibold leading-tight text-foreground">Paragon Alternative Capital</p>
+          </div>
           <div>
             <h1 className="text-xl font-semibold">Platform Login</h1>
             <p className="text-sm text-muted-foreground">Sign in to continue to the Paragon Funding CRM.</p>
