@@ -7,8 +7,8 @@ import { toUiPipelineStage } from '@/lib/utils';
 export default async function AdminDashboardPage() {
   await requireRole(['admin']);
   const supabase = await createClient();
-  const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,owner_name,current_stage,funded_amount,submitted_at');
-  const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,owner_name,created_at');
+  const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at');
+  const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,created_at');
   const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
   const { data: profiles } = await supabase.from('profiles').select('id,full_name,role');
 
@@ -22,33 +22,76 @@ export default async function AdminDashboardPage() {
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
   const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
 
-  const internalRoleWhitelist = new Set(['admin', 'rep', 'processing']);
+  const internalRoleWhitelist = new Set(['admin', 'rep']);
   const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').toLowerCase()));
+  type RepMetrics = {
+    hotLeads: number;
+    appsSubmitted: number;
+    underwriting: number;
+    offers: number;
+    contractsOut: number;
+    fundedDeals: number;
+    totalFundedAmount: number;
+    openApprovalAmount: number;
+    lastActivity: string | null;
+  };
 
-  const repRows = internalProfiles.map((rep) => {
-    const repId = rep.id;
-    const repDeals = (deals ?? []).filter((d) => d.assigned_rep_id === repId);
-    const repLeads = (hotLeads ?? []).filter((l) => l.assigned_rep_id === repId);
-    const lastDealAt = repDeals.reduce<string | null>((latest, d) => (!latest || new Date(d.submitted_at) > new Date(latest) ? d.submitted_at : latest), null);
-    const lastLeadAt = repLeads.reduce<string | null>((latest, l) => (!latest || new Date(l.created_at) > new Date(latest) ? l.created_at : latest), null);
-    const lastActivity = [lastDealAt, lastLeadAt].filter(Boolean).sort().at(-1) ?? null;
+  const emptyMetrics = (): RepMetrics => ({
+    hotLeads: 0,
+    appsSubmitted: 0,
+    underwriting: 0,
+    offers: 0,
+    contractsOut: 0,
+    fundedDeals: 0,
+    totalFundedAmount: 0,
+    openApprovalAmount: 0,
+    lastActivity: null
+  });
 
-    return {
-      repId,
+  const metricsByRep = new Map<string, RepMetrics>();
+  const ensureRepMetrics = (repId: string) => {
+    const existing = metricsByRep.get(repId);
+    if (existing) return existing;
+    const created = emptyMetrics();
+    metricsByRep.set(repId, created);
+    return created;
+  };
+
+  (hotLeads ?? []).forEach((lead) => {
+    if (!lead.assigned_rep_id) return;
+    const metrics = ensureRepMetrics(lead.assigned_rep_id);
+    metrics.hotLeads += 1;
+    if (!metrics.lastActivity || new Date(lead.created_at) > new Date(metrics.lastActivity)) metrics.lastActivity = lead.created_at;
+  });
+
+  (deals ?? []).forEach((deal) => {
+    if (!deal.assigned_rep_id) return;
+    const metrics = ensureRepMetrics(deal.assigned_rep_id);
+    metrics.appsSubmitted += 1;
+    if (['Application Submitted', 'In Underwriting'].includes(deal.current_stage)) metrics.underwriting += 1;
+    if (deal.current_stage === 'Offers / Declines Received') metrics.offers += 1;
+    if (deal.current_stage === 'Contracts Signed' || deal.current_stage === 'Contracts Out') metrics.contractsOut += 1;
+    if (toUiPipelineStage(deal.current_stage) === 'Funded') metrics.fundedDeals += 1;
+    metrics.totalFundedAmount += Number(deal.funded_amount ?? 0);
+    if (!metrics.lastActivity || new Date(deal.submitted_at) > new Date(metrics.lastActivity)) metrics.lastActivity = deal.submitted_at;
+  });
+
+  (offers ?? []).forEach((offer) => {
+    if (offer.status !== 'open') return;
+    const repId = dealRepLookup.get(offer.deal_id);
+    if (!repId) return;
+    const metrics = ensureRepMetrics(repId);
+    metrics.openApprovalAmount += Number(offer.approval_amount ?? 0);
+  });
+
+  const repRows = internalProfiles
+    .map((rep) => ({
+      repId: rep.id,
       repName: rep.full_name ?? 'Unknown Rep',
-      hotLeads: repLeads.length,
-      appsSubmitted: repDeals.length,
-      underwriting: repDeals.filter((d) => ['Application Submitted', 'In Underwriting'].includes(d.current_stage)).length,
-      offers: repDeals.filter((d) => d.current_stage === 'Offers / Declines Received').length,
-      contractsOut: repDeals.filter((d) => d.current_stage === 'Contracts Signed' || d.current_stage === 'Contracts Out').length,
-      fundedDeals: repDeals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length,
-      totalFundedAmount: repDeals.reduce((sum, d) => sum + Number(d.funded_amount ?? 0), 0),
-      openApprovalAmount: (offers ?? [])
-        .filter((o) => o.status === 'open' && dealRepLookup.get(o.deal_id) === repId)
-        .reduce((sum, o) => sum + Number(o.approval_amount), 0),
-      lastActivity
-    };
-  }).sort((a, b) => b.totalFundedAmount - a.totalFundedAmount || b.fundedDeals - a.fundedDeals || b.appsSubmitted - a.appsSubmitted);
+      ...emptyMetrics(),
+      ...(metricsByRep.get(rep.id) ?? {})
+    }))
+    .sort((a, b) => b.totalFundedAmount - a.totalFundedAmount || b.fundedDeals - a.fundedDeals || b.appsSubmitted - a.appsSubmitted || a.repName.localeCompare(b.repName));
 
   return (
     <div className="space-y-6">
