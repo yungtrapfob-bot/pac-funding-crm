@@ -4,16 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { requireRole } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/admin';
 import type { UserRole } from '@/types/db';
-
-export type CreateUserFormState = {
-  status: 'idle' | 'success' | 'error';
-  message: string;
-};
-
-export const initialCreateUserFormState: CreateUserFormState = {
-  status: 'idle',
-  message: ''
-};
+import type { CreateUserFormState } from '@/actions/admin-users-form-state';
 
 function isUserRole(value: string): value is UserRole {
   return value === 'admin' || value === 'rep';
