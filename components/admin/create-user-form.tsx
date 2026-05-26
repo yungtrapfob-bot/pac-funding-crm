@@ -1,12 +1,23 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+import { useFormState, useFormStatus } from 'react-dom';
 import { createRepUserAction, initialCreateUserFormState } from '@/actions/admin-users';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
+function SubmitButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? 'Creating…' : 'Create and send invite'}
+    </Button>
+  );
+}
+
 export function CreateUserForm() {
-  const [state, formAction, isPending] = useActionState(createRepUserAction, initialCreateUserFormState);
+  const [state, formAction] = useFormState(createRepUserAction, initialCreateUserFormState);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -40,7 +51,7 @@ export function CreateUserForm() {
         </label>
       </div>
       <div className="flex items-center gap-3">
-        <Button type="submit" disabled={isPending}>{isPending ? 'Creating…' : 'Create and send invite'}</Button>
+        <SubmitButton />
         {state.status !== 'idle' ? (
           <p className={state.status === 'success' ? 'text-sm text-green-600' : 'text-sm text-red-600'}>{state.message}</p>
         ) : null}
