@@ -19,22 +19,40 @@ export async function createRepUserAction(
   const fullName = String(formData.get('fullName') ?? '').trim();
   const email = String(formData.get('email') ?? '').trim().toLowerCase();
   const roleInput = String(formData.get('role') ?? 'rep');
+  const password = String(formData.get('password') ?? '');
+  const confirmPassword = String(formData.get('confirmPassword') ?? '');
   const role: UserRole = isUserRole(roleInput) ? roleInput : 'rep';
 
-  if (!fullName || !email) {
-    return { status: 'error', message: 'Full name and email are required.' };
+  if (!fullName || !email || !password || !confirmPassword) {
+    return { status: 'error', message: 'Full name, email, password, and confirm password are required.' };
+  }
+
+  if (password !== confirmPassword) {
+    return { status: 'error', message: 'Passwords do not match. Please re-enter both password fields.' };
   }
 
   const adminClient = createAdminClient();
 
-  const { data: createdUser, error: authError } = await adminClient.auth.admin.inviteUserByEmail(email, {
-    data: {
+  const { data: createdUser, error: authError } = await adminClient.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: {
       full_name: fullName,
       role
     }
   });
 
   if (authError || !createdUser.user) {
+    const errorMessage = authError?.message?.toLowerCase() ?? '';
+
+    if (errorMessage.includes('already') || errorMessage.includes('exists') || errorMessage.includes('duplicate')) {
+      return {
+        status: 'error',
+        message: `A user with email ${email} already exists.`
+      };
+    }
+
     return {
       status: 'error',
       message: authError?.message ?? 'Failed to create auth user.'
@@ -62,6 +80,6 @@ export async function createRepUserAction(
 
   return {
     status: 'success',
-    message: `User invited: ${email}`
+    message: `User created successfully: ${email}. The user can log in immediately with the admin-provided password.`
   };
 }
