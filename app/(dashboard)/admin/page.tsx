@@ -10,7 +10,7 @@ export default async function AdminDashboardPage() {
   const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,owner_name,current_stage,funded_amount,submitted_at');
   const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,owner_name,created_at');
   const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
-  const { data: profiles } = await supabase.from('profiles').select('id,full_name,role').in('role', ['admin', 'rep']);
+  const { data: profiles } = await supabase.from('profiles').select('id,full_name,role');
 
   const apps = deals?.length ?? 0;
   const underwritingDeals = deals?.filter((d) => ['Application Submitted', 'In Underwriting'].includes(d.current_stage)).length ?? 0;
@@ -22,7 +22,10 @@ export default async function AdminDashboardPage() {
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
   const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
 
-  const repRows = (profiles ?? []).map((rep) => {
+  const internalRoleWhitelist = new Set(['admin', 'rep', 'processing']);
+  const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').toLowerCase()));
+
+  const repRows = internalProfiles.map((rep) => {
     const repId = rep.id;
     const repDeals = (deals ?? []).filter((d) => d.assigned_rep_id === repId);
     const repLeads = (hotLeads ?? []).filter((l) => l.assigned_rep_id === repId);
