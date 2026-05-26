@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireUser } from '@/lib/auth';
 import { PIPELINE_STAGES, toDbPipelineStage } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
@@ -14,19 +15,12 @@ const dealStageSchema = z.enum(PIPELINE_STAGES);
 const hotLeadSchema = z.object({ business_name: z.string().min(2), owner_name: z.string().min(2), phone: z.string().min(7), email: z.string().email(), industry: z.string().min(2), monthly_revenue: z.coerce.number().nonnegative(), time_in_business_months: z.coerce.number().nonnegative(), state: z.string().min(2), positions: z.coerce.number().nonnegative(), nsf_count: z.coerce.number().nonnegative(), deposits: z.coerce.number().nonnegative(), fico: z.coerce.number().min(300).max(850), notes: z.string().optional(), next_follow_up_date: z.string().optional(), follow_up_status: followUpStatusSchema.default('pending'), outcome_tag: z.string().optional() });
 export type HotLeadFormState = { status: 'idle' | 'error'; message?: string; fieldErrors?: Record<string, string[] | undefined> };
 
-async function resolveProfileIdForUser(supabase: Awaited<ReturnType<typeof createClient>>, user: { id: string; email?: string | null }) {
-  const { data: profileById } = await supabase.from('profiles').select('id').eq('id', user.id).maybeSingle();
-  if (profileById?.id) return profileById.id;
-
-  if (user.email) {
-    const { data: profileByEmail } = await supabase.from('profiles').select('id').eq('email', user.email).maybeSingle();
-    if (profileByEmail?.id) return profileByEmail.id;
-  }
-
-  return user.id;
+async function resolveProfileIdForUser() {
+  const { profile } = await requireUser();
+  return profile.id;
 }
 
-export async function createHotLead(_: HotLeadFormState, formData: FormData): Promise<HotLeadFormState> { const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return { status: 'error', message: 'Unauthorized' }; const assignedRepId = await resolveProfileIdForUser(supabase, user); const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData)); if (!parsed.success) return { status: 'error', message: 'Please fix the highlighted fields.', fieldErrors: parsed.error.flatten().fieldErrors }; const { next_follow_up_date, ...rest } = parsed.data; const { data: lead, error } = await supabase.from('hot_leads').insert({ ...rest, next_follow_up_date: next_follow_up_date ? new Date(next_follow_up_date).toISOString() : null, assigned_rep_id: assignedRepId, last_contact_date: new Date().toISOString().slice(0, 10) }).select('id').single(); if (error || !lead) return { status: 'error', message: error?.message ?? 'Failed to create lead.' }; revalidatePath('/dashboard'); revalidatePath('/hot-leads'); redirect(`/hot-leads/${lead.id}?created=1`); }
+export async function createHotLead(_: HotLeadFormState, formData: FormData): Promise<HotLeadFormState> { const supabase = await createClient(); const assignedRepId = await resolveProfileIdForUser(); const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData)); if (!parsed.success) return { status: 'error', message: 'Please fix the highlighted fields.', fieldErrors: parsed.error.flatten().fieldErrors }; const { next_follow_up_date, ...rest } = parsed.data; const { data: lead, error } = await supabase.from('hot_leads').insert({ ...rest, next_follow_up_date: next_follow_up_date ? new Date(next_follow_up_date).toISOString() : null, assigned_rep_id: assignedRepId, last_contact_date: new Date().toISOString().slice(0, 10) }).select('id').single(); if (error || !lead) return { status: 'error', message: error?.message ?? 'Failed to create lead.' }; revalidatePath('/dashboard'); revalidatePath('/hot-leads'); redirect(`/hot-leads/${lead.id}?created=1`); }
 
 export async function updateHotLead(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const { error } = await supabase.from('hot_leads').update({ business_name: p.business_name, owner_name: p.owner_name, phone: p.phone, email: p.email, follow_up_status: followUpStatusSchema.parse(p.follow_up_status), next_follow_up_date: p.next_follow_up_date ? new Date(String(p.next_follow_up_date)).toISOString() : null, notes: p.notes, outcome_tag: p.outcome_tag, last_contact_date: new Date().toISOString().slice(0, 10) }).eq('id', String(p.id)); if (error) throw new Error(error.message); revalidatePath('/hot-leads'); revalidatePath(`/hot-leads/${p.id}`); redirect(`/hot-leads/${p.id}?saved=hot_lead`); }
 
@@ -57,6 +51,8 @@ export async function submitHotLeadConversion(
   const { data: existingDeal } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`);
 
+  const assignedRepId = lead.assigned_rep_id ?? (await resolveProfileIdForUser());
+
   const payload = {
     business_name: String(formData.get('business_name') ?? ''),
     owner_name: String(formData.get('owner_name') ?? ''),
@@ -72,7 +68,7 @@ export async function submitHotLeadConversion(
     fico: Number(formData.get('fico') ?? 0),
     notes: String(formData.get('notes') ?? ''),
     internal_notes: String(formData.get('internal_notes') ?? ''),
-    assigned_rep_id: lead.assigned_rep_id
+    assigned_rep_id: assignedRepId
   };
 
   const { data: deal, error: dealError } = await supabase.from('deals').insert(payload).select('id').single();
@@ -111,7 +107,7 @@ export async function submitHotLeadConversion(
 }
 
 export async function createDeal(formData: FormData) { /* unchanged */
- const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) throw new Error('Unauthorized'); const assignedRepId = await resolveProfileIdForUser(supabase, user); const payload = Object.fromEntries(formData); const { error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: assignedRepId }); if (error) throw new Error(error.message); revalidatePath('/deals'); }
+ const supabase = await createClient(); const assignedRepId = await resolveProfileIdForUser(); const payload = Object.fromEntries(formData); const { error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: assignedRepId }); if (error) throw new Error(error.message); revalidatePath('/deals'); }
 
 export async function updateDealDetails(formData: FormData) {
  const supabase = await createClient(); const p = Object.fromEntries(formData);
