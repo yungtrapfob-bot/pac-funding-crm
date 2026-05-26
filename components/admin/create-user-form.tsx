@@ -12,7 +12,7 @@ function SubmitButton() {
 
   return (
     <Button type="submit" disabled={pending}>
-      {pending ? 'Creating…' : 'Create and send invite'}
+      {pending ? 'Creating…' : 'Create user'}
     </Button>
   );
 }
@@ -29,7 +29,7 @@ export function CreateUserForm() {
 
   return (
     <form ref={formRef} action={formAction} className="space-y-3 rounded-md border border-border p-4">
-      <h2 className="text-lg font-semibold">Invite rep/admin user</h2>
+      <h2 className="text-lg font-semibold">Create rep/admin user</h2>
       <div className="grid gap-3 md:grid-cols-3">
         <label className="space-y-1 text-sm">
           <span>Full name</span>
@@ -49,6 +49,16 @@ export function CreateUserForm() {
             <option value="rep">Rep</option>
             <option value="admin">Admin</option>
           </select>
+        </label>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        <label className="space-y-1 text-sm">
+          <span>Password</span>
+          <Input name="password" type="password" autoComplete="new-password" required />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span>Confirm password</span>
+          <Input name="confirmPassword" type="password" autoComplete="new-password" required />
         </label>
       </div>
       <div className="flex items-center gap-3">
