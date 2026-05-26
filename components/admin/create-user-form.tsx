@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from 'react';
 import { useFormState, useFormStatus } from 'react-dom';
-import { createRepUserAction, initialCreateUserFormState } from '@/actions/admin-users';
+import { createRepUserAction } from '@/actions/admin-users';
+import { initialCreateUserFormState } from '@/actions/admin-users-form-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
