@@ -88,7 +88,7 @@ export default async function HotLeadsPage({
             <thead className="bg-muted/40 text-left">
               <tr>
                 <th className="p-2">Business</th><th className="p-2">Owner</th><th className="p-2">Phone</th><th className="p-2">Email</th>
-                <th className="p-2">Follow-up Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th><th className="p-2">Notes Preview</th>
+                <th className="p-2">Assigned Rep</th><th className="p-2">Follow-up Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th><th className="p-2">Notes Preview</th>
               </tr>
             </thead>
             <tbody>
@@ -98,6 +98,7 @@ export default async function HotLeadsPage({
                   <td className="p-2">{lead.owner_name}</td>
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
+                  <td className="p-2">{lead.profiles?.full_name || '—'}</td>
                   <td className="p-2">{lead.follow_up_status}</td>
                   <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>

@@ -9,8 +9,8 @@ export default async function AdminDashboardPage() {
   await requireRole(['admin']);
   await reconcileInternalAuthUsers();
   const supabase = await createClient();
-  const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at');
-  const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,created_at');
+  const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,owner_profile_id,current_stage,funded_amount,submitted_at');
+  const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,owner_profile_id,created_at');
   const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
   const { data: profiles } = await supabase.from('profiles').select('id,full_name,role');
 
@@ -22,7 +22,7 @@ export default async function AdminDashboardPage() {
   const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
   const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
-  const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
+  const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.owner_profile_id ?? d.assigned_rep_id]));
 
   const internalRoleWhitelist = new Set(['admin', 'rep']);
   const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').toLowerCase()));
@@ -60,15 +60,17 @@ export default async function AdminDashboardPage() {
   };
 
   (hotLeads ?? []).forEach((lead) => {
-    if (!lead.assigned_rep_id) return;
-    const metrics = ensureRepMetrics(lead.assigned_rep_id);
+    const leadOwnerId = lead.owner_profile_id ?? lead.assigned_rep_id;
+    if (!leadOwnerId) return;
+    const metrics = ensureRepMetrics(leadOwnerId);
     metrics.hotLeads += 1;
     if (!metrics.lastActivity || new Date(lead.created_at) > new Date(metrics.lastActivity)) metrics.lastActivity = lead.created_at;
   });
 
   (deals ?? []).forEach((deal) => {
-    if (!deal.assigned_rep_id) return;
-    const metrics = ensureRepMetrics(deal.assigned_rep_id);
+    const dealOwnerId = deal.owner_profile_id ?? deal.assigned_rep_id;
+    if (!dealOwnerId) return;
+    const metrics = ensureRepMetrics(dealOwnerId);
     metrics.appsSubmitted += 1;
     if (['Application Submitted', 'In Underwriting'].includes(deal.current_stage)) metrics.underwriting += 1;
     if (deal.current_stage === 'Offers / Declines Received') metrics.offers += 1;
@@ -112,7 +114,7 @@ export default async function AdminDashboardPage() {
       <section className="space-y-3">
         <div>
           <h2 className="text-xl font-semibold">Rep Performance</h2>
-          <p className="text-sm text-muted-foreground">Production and pipeline contribution by assigned owner.</p>
+          <p className="text-sm text-muted-foreground">Production and pipeline contribution by internal owner attribution.</p>
         </div>
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-[1100px] text-sm">
