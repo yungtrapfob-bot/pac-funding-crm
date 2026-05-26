@@ -22,10 +22,8 @@ export default async function AdminDashboardPage() {
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
   const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
 
-  const profileLookup = new Map((profiles ?? []).map((p) => [p.id, p]));
-  const repRows = Array.from(
-    new Set([...(deals ?? []).map((d) => d.assigned_rep_id).filter(Boolean), ...(hotLeads ?? []).map((l) => l.assigned_rep_id).filter(Boolean)])
-  ).map((repId) => {
+  const repRows = (profiles ?? []).map((rep) => {
+    const repId = rep.id;
     const repDeals = (deals ?? []).filter((d) => d.assigned_rep_id === repId);
     const repLeads = (hotLeads ?? []).filter((l) => l.assigned_rep_id === repId);
     const lastDealAt = repDeals.reduce<string | null>((latest, d) => (!latest || new Date(d.submitted_at) > new Date(latest) ? d.submitted_at : latest), null);
@@ -34,7 +32,7 @@ export default async function AdminDashboardPage() {
 
     return {
       repId,
-      repName: profileLookup.get(repId)?.full_name ?? repDeals[0]?.owner_name ?? repLeads[0]?.owner_name ?? 'Unassigned',
+      repName: rep.full_name ?? 'Unknown Rep',
       hotLeads: repLeads.length,
       appsSubmitted: repDeals.length,
       underwriting: repDeals.filter((d) => ['Application Submitted', 'In Underwriting'].includes(d.current_stage)).length,
