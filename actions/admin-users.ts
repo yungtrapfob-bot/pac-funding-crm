@@ -43,25 +43,81 @@ export async function createRepUserAction(
     }
   });
 
-  if (authError || !createdUser.user) {
+  let targetUserId = createdUser?.user?.id;
+  let reusedExistingUser = false;
+
+  if (authError || !targetUserId) {
     const errorMessage = authError?.message?.toLowerCase() ?? '';
 
     if (errorMessage.includes('already') || errorMessage.includes('exists') || errorMessage.includes('duplicate')) {
+      let existingUserId: string | null = null;
+      let page = 1;
+
+      while (!existingUserId) {
+        const { data: usersPage, error: listError } = await adminClient.auth.admin.listUsers({
+          page,
+          perPage: 200
+        });
+
+        if (listError) {
+          return {
+            status: 'error',
+            message: `Failed to locate existing auth user for ${email}: ${listError.message}`
+          };
+        }
+
+        const users = usersPage?.users ?? [];
+        const matchedUser = users.find((user) => user.email?.toLowerCase() === email);
+
+        if (matchedUser) {
+          existingUserId = matchedUser.id;
+          break;
+        }
+
+        if (users.length < 200) {
+          break;
+        }
+
+        page += 1;
+      }
+
+      if (!existingUserId) {
+        return {
+          status: 'error',
+          message: `An auth user with email ${email} appears to exist, but could not be located for sync.`
+        };
+      }
+
+      const { error: updateExistingError } = await adminClient.auth.admin.updateUserById(existingUserId, {
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: {
+          full_name: fullName,
+          role
+        }
+      });
+
+      if (updateExistingError) {
+        return {
+          status: 'error',
+          message: `Failed to update existing auth user ${email}: ${updateExistingError.message}`
+        };
+      }
+
+      targetUserId = existingUserId;
+      reusedExistingUser = true;
+    } else {
       return {
         status: 'error',
-        message: `A user with email ${email} already exists.`
+        message: authError?.message ?? 'Failed to create auth user.'
       };
     }
-
-    return {
-      status: 'error',
-      message: authError?.message ?? 'Failed to create auth user.'
-    };
   }
 
   const { error: profileError } = await adminClient.from('profiles').upsert(
     {
-      id: createdUser.user.id,
+      id: targetUserId,
       full_name: fullName,
       email,
       role
@@ -80,6 +136,8 @@ export async function createRepUserAction(
 
   return {
     status: 'success',
-    message: `User created successfully: ${email}. The user can log in immediately with the admin-provided password.`
+    message: reusedExistingUser
+      ? `Existing user updated and synced: ${email}. Password reset and profile are now aligned.`
+      : `User created: ${email}. The user can log in immediately with the admin-provided password.`
   };
 }
