@@ -1,9 +1,11 @@
 import { CreateUserForm } from '@/components/admin/create-user-form';
+import { reconcileInternalAuthUsers } from '@/actions/admin-users';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
 export default async function UsersPage() {
   await requireRole(['admin']);
+  await reconcileInternalAuthUsers();
   const supabase = await createClient();
   const { data: users } = await supabase
     .from('profiles')

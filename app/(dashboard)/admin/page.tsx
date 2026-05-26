@@ -1,11 +1,13 @@
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Card } from '@/components/ui/card';
+import { reconcileInternalAuthUsers } from '@/actions/admin-users';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { toUiPipelineStage } from '@/lib/utils';
 
 export default async function AdminDashboardPage() {
   await requireRole(['admin']);
+  await reconcileInternalAuthUsers();
   const supabase = await createClient();
   const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at');
   const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,created_at');

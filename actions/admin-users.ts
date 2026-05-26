@@ -10,6 +10,75 @@ function isUserRole(value: string): value is UserRole {
   return value === 'admin' || value === 'rep';
 }
 
+async function findAuthUserByEmail(adminClient: ReturnType<typeof createAdminClient>, email: string) {
+  let page = 1;
+
+  while (true) {
+    const { data: usersPage, error: listError } = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: 200
+    });
+
+    if (listError) {
+      throw new Error(listError.message);
+    }
+
+    const users = usersPage?.users ?? [];
+    const matchedUser = users.find((user) => user.email?.toLowerCase() === email);
+    if (matchedUser) return matchedUser;
+    if (users.length < 200) return null;
+    page += 1;
+  }
+}
+
+async function upsertProfileForAuthUser(
+  adminClient: ReturnType<typeof createAdminClient>,
+  {
+    id,
+    email,
+    fullName,
+    role
+  }: { id: string; email: string; fullName: string; role: UserRole }
+) {
+  const { error } = await adminClient.from('profiles').upsert(
+    {
+      id,
+      full_name: fullName,
+      email,
+      role
+    },
+    { onConflict: 'id' }
+  );
+  if (error) throw new Error(error.message);
+}
+
+export async function reconcileInternalAuthUsers(): Promise<number> {
+  const adminClient = createAdminClient();
+  let page = 1;
+  let synced = 0;
+
+  while (true) {
+    const { data: usersPage, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
+    if (error) throw new Error(`Unable to list auth users for reconciliation: ${error.message}`);
+    const users = usersPage?.users ?? [];
+    for (const user of users) {
+      const roleInput = String(user.user_metadata?.role ?? '').toLowerCase();
+      if (!isUserRole(roleInput)) continue;
+      await upsertProfileForAuthUser(adminClient, {
+        id: user.id,
+        email: String(user.email ?? '').toLowerCase(),
+        fullName: String(user.user_metadata?.full_name ?? user.email ?? 'Unknown User'),
+        role: roleInput
+      });
+      synced += 1;
+    }
+    if (users.length < 200) break;
+    page += 1;
+  }
+
+  return synced;
+}
+
 export async function createRepUserAction(
   _prevState: CreateUserFormState,
   formData: FormData
@@ -33,102 +102,63 @@ export async function createRepUserAction(
 
   const adminClient = createAdminClient();
 
-  const { data: createdUser, error: authError } = await adminClient.auth.admin.createUser({
-    email,
-    password,
-    email_confirm: true,
-    user_metadata: {
-      full_name: fullName,
-      role
-    }
-  });
-
-  let targetUserId = createdUser?.user?.id;
-  let reusedExistingUser = false;
-
-  if (authError || !targetUserId) {
-    const errorMessage = authError?.message?.toLowerCase() ?? '';
-
-    if (errorMessage.includes('already') || errorMessage.includes('exists') || errorMessage.includes('duplicate')) {
-      let existingUserId: string | null = null;
-      let page = 1;
-
-      while (!existingUserId) {
-        const { data: usersPage, error: listError } = await adminClient.auth.admin.listUsers({
-          page,
-          perPage: 200
-        });
-
-        if (listError) {
-          return {
-            status: 'error',
-            message: `Failed to locate existing auth user for ${email}: ${listError.message}`
-          };
-        }
-
-        const users = usersPage?.users ?? [];
-        const matchedUser = users.find((user) => user.email?.toLowerCase() === email);
-
-        if (matchedUser) {
-          existingUserId = matchedUser.id;
-          break;
-        }
-
-        if (users.length < 200) {
-          break;
-        }
-
-        page += 1;
-      }
-
-      if (!existingUserId) {
-        return {
-          status: 'error',
-          message: `An auth user with email ${email} appears to exist, but could not be located for sync.`
-        };
-      }
-
-      const { error: updateExistingError } = await adminClient.auth.admin.updateUserById(existingUserId, {
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName,
-          role
-        }
-      });
-
-      if (updateExistingError) {
-        return {
-          status: 'error',
-          message: `Failed to update existing auth user ${email}: ${updateExistingError.message}`
-        };
-      }
-
-      targetUserId = existingUserId;
-      reusedExistingUser = true;
-    } else {
-      return {
-        status: 'error',
-        message: authError?.message ?? 'Failed to create auth user.'
-      };
-    }
+  let existingUser = null;
+  try {
+    existingUser = await findAuthUserByEmail(adminClient, email);
+  } catch (error) {
+    return { status: 'error', message: `Failed to check for existing auth user ${email}: ${String(error)}` };
   }
 
-  const { error: profileError } = await adminClient.from('profiles').upsert(
-    {
-      id: targetUserId,
-      full_name: fullName,
-      email,
-      role
-    },
-    { onConflict: 'id' }
-  );
+  let targetUserId: string | null = existingUser?.id ?? null;
+  const reusedExistingUser = Boolean(existingUser);
 
-  if (profileError) {
+  if (existingUser) {
+    const { error: updateExistingError } = await adminClient.auth.admin.updateUserById(existingUser.id, {
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        role
+      }
+    });
+
+    if (updateExistingError) {
+      return {
+        status: 'error',
+        message: `Failed to update existing auth user ${email}: ${updateExistingError.message}`
+      };
+    }
+  } else {
+    const { data: createdUser, error: authError } = await adminClient.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: {
+        full_name: fullName,
+        role
+      }
+    });
+    if (authError || !createdUser?.user?.id) {
+      return {
+        status: 'error',
+        message: authError?.message ?? `Failed to create auth user for ${email}.`
+      };
+    }
+    targetUserId = createdUser.user.id;
+  }
+
+  try {
+    await upsertProfileForAuthUser(adminClient, {
+      id: targetUserId!,
+      email,
+      fullName,
+      role
+    });
+  } catch (error) {
     return {
       status: 'error',
-      message: `Auth user created, but profile write failed: ${profileError.message}`
+      message: `Auth user synced, but profile write failed: ${String(error)}`
     };
   }
 
