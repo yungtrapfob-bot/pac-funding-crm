@@ -6,18 +6,10 @@ import { createClient } from '@/lib/supabase/server';
 
 type SortMode = 'followup_soonest' | 'newest_created' | 'stale_followups';
 
-type RepRelation = { full_name: string | null } | { full_name: string | null }[] | null | undefined;
-
 function getSortLabel(sort: SortMode) {
   if (sort === 'newest_created') return 'Newest created';
   if (sort === 'stale_followups') return 'Stale follow-ups';
   return 'Next follow-up soonest';
-}
-
-function getAssignedRepName(relation: RepRelation) {
-  if (!relation) return null;
-  if (Array.isArray(relation)) return relation[0]?.full_name ?? null;
-  return relation.full_name ?? null;
 }
 
 export default async function HotLeadsPage({
@@ -38,9 +30,7 @@ export default async function HotLeadsPage({
     ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
     : { data: [] };
 
-  let query = supabase
-    .from('hot_leads')
-    .select('*, assigned_rep:assigned_rep_id(full_name), owner_profile:owner_profile_id(full_name)');
+  let query = supabase.from('hot_leads').select('*');
 
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
   if (isAdmin && rep) query = rep === 'unassigned' ? query.is('assigned_rep_id', null) : query.eq('assigned_rep_id', rep);
@@ -57,6 +47,14 @@ export default async function HotLeadsPage({
 
   const { data } = await query;
   let hotLeads = data ?? [];
+
+  const repIds = Array.from(
+    new Set(hotLeads.map((lead) => lead.assigned_rep_id).filter((assignedRepId): assignedRepId is string => Boolean(assignedRepId)))
+  );
+  const { data: assignedRepProfiles } = repIds.length
+    ? await supabase.from('profiles').select('id,full_name').in('id', repIds)
+    : { data: [] };
+  const assignedRepNameById = new Map((assignedRepProfiles ?? []).map((repProfile) => [repProfile.id, repProfile.full_name ?? null]));
 
   if (sort === 'stale_followups') {
     const now = Date.now();
@@ -128,7 +126,7 @@ export default async function HotLeadsPage({
                   <td className="p-2">{lead.owner_name}</td>
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
-                  <td className="p-2">{getAssignedRepName(lead.assigned_rep) || getAssignedRepName(lead.owner_profile) || '—'}</td>
+                  <td className="p-2">{(lead.assigned_rep_id ? assignedRepNameById.get(lead.assigned_rep_id) : null) || '—'}</td>
                   <td className="p-2">{lead.follow_up_status}</td>
                   <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>
