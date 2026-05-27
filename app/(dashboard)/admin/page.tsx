@@ -14,16 +14,23 @@ export default async function AdminDashboardPage() {
   const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
   const { data: profiles } = await supabase.from('profiles').select('id,full_name,role');
 
+
+  const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
+    if (!dealStage) return false;
+    if (acceptedRawStages.includes(dealStage)) return true;
+    return acceptedUiStages.includes(toUiPipelineStage(dealStage));
+  };
+
   const apps = deals?.length ?? 0;
-  const underwritingDeals = deals?.filter((d) => ['Application Submitted', 'In Underwriting'].includes(d.current_stage)).length ?? 0;
-  const offersDeals = deals?.filter((d) => d.current_stage === 'Offers / Declines Received').length ?? 0;
-  const contractsRequestedDeals = deals?.filter((d) => d.current_stage === 'Contracts Requested').length ?? 0;
-  const contractsOutDeals = deals?.filter((d) => d.current_stage === 'Contracts Signed' || d.current_stage === 'Contracts Out').length ?? 0;
+  const underwritingDeals = deals?.filter((d) => hasStage(d.current_stage, ['Application Submitted', 'In Underwriting'], ['In Underwriting'])).length ?? 0;
+  const offersDeals = deals?.filter((d) => hasStage(d.current_stage, ['Offers / Declines Received'], ['Offers'])).length ?? 0;
+  const contractsRequestedDeals = deals?.filter((d) => hasStage(d.current_stage, ['Contracts Requested'], ['Offers'])).length ?? 0;
+  const contractsOutDeals = deals?.filter((d) => hasStage(d.current_stage, ['Contracts Signed', 'Contracts Out'], ['Contracts Out'])).length ?? 0;
   const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
   const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
   const internalRoleWhitelist = new Set(['admin', 'rep']);
-  const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').toLowerCase()));
+  const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').trim().toLowerCase()));
   const internalProfileIds = new Set(internalProfiles.map((profile) => profile.id));
 
   const resolveInternalRepId = (ownerProfileId: string | null, assignedRepId: string | null) => {
@@ -79,9 +86,9 @@ export default async function AdminDashboardPage() {
     if (!dealOwnerId) return;
     const metrics = ensureRepMetrics(dealOwnerId);
     metrics.appsSubmitted += 1;
-    if (['Application Submitted', 'In Underwriting'].includes(deal.current_stage)) metrics.underwriting += 1;
-    if (deal.current_stage === 'Offers / Declines Received') metrics.offers += 1;
-    if (deal.current_stage === 'Contracts Signed' || deal.current_stage === 'Contracts Out') metrics.contractsOut += 1;
+    if (hasStage(deal.current_stage, ['Application Submitted', 'In Underwriting'], ['In Underwriting'])) metrics.underwriting += 1;
+    if (hasStage(deal.current_stage, ['Offers / Declines Received'], ['Offers'])) metrics.offers += 1;
+    if (hasStage(deal.current_stage, ['Contracts Signed', 'Contracts Out'], ['Contracts Out'])) metrics.contractsOut += 1;
     if (toUiPipelineStage(deal.current_stage) === 'Funded') metrics.fundedDeals += 1;
     metrics.totalFundedAmount += Number(deal.funded_amount ?? 0);
     if (!metrics.lastActivity || new Date(deal.submitted_at) > new Date(metrics.lastActivity)) metrics.lastActivity = deal.submitted_at;
