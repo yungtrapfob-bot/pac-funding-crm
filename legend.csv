@@ -1,0 +1,6 @@
+Color,Meaning
+Green,Preferred industries (YES) – good fit.
+Yellow,Conditional industries – allowed but requires thresholds/extra rules.
+Red,Restricted / Prohibited industries – do not submit.
+Header filters,"Use the filter row (Row 2) to filter by Positions, State, Industry, etc."
+Freeze panes,Rows 1–2 and Columns A–B are frozen so you always see Section + Funder/Positions.
