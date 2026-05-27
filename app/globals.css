@@ -1,25 +1,60 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --background: 220 20% 98%;
-  --foreground: 222 47% 11%;
-  --card: 0 0% 100%;
-  --muted: 215 20% 90%;
-  --border: 214 20% 84%;
-  --primary: 221 83% 53%;
+  --bg-base: 220 18% 96%;
+  --bg-surface: 0 0% 100%;
+  --bg-surface-2: 220 15% 94%;
+  --border-subtle: 215 16% 84%;
+  --border-strong: 218 20% 72%;
+  --fg-primary: 222 30% 12%;
+  --fg-muted: 220 9% 42%;
+  --fg-faint: 218 10% 55%;
+  --accent: 44 67% 47%;
+  --accent-fg: 220 22% 7%;
+  --status-success: 145 58% 44%;
+  --status-warning: 37 73% 55%;
+  --status-danger: 358 76% 59%;
+  --status-info: 218 89% 63%;
+  --status-neutral: 220 9% 46%;
 }
 
 .dark {
-  --background: 224 71% 4%;
-  --foreground: 213 31% 91%;
-  --card: 222 47% 11%;
-  --muted: 217 33% 17%;
-  --border: 217 33% 24%;
-  --primary: 217 91% 60%;
+  --bg-base: 220 22% 5%;
+  --bg-surface: 214 18% 8%;
+  --bg-surface-2: 216 14% 10%;
+  --border-subtle: 220 11% 12%;
+  --border-strong: 219 12% 16%;
+  --fg-primary: 220 13% 91%;
+  --fg-muted: 217 8% 57%;
+  --fg-faint: 217 8% 38%;
+  --accent: 44 67% 47%;
+  --accent-fg: 220 22% 7%;
+  --status-success: 145 58% 44%;
+  --status-warning: 37 73% 55%;
+  --status-danger: 358 76% 59%;
+  --status-info: 218 89% 63%;
+  --status-neutral: 220 9% 46%;
 }
 
 body {
   @apply bg-background text-foreground antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.font-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.tracked-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
 }
