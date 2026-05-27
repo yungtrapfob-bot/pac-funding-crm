@@ -121,16 +121,16 @@ export default async function AdminDashboardPage() {
           <h2 className="text-xl font-semibold">Rep Performance</h2>
           <p className="text-sm text-muted-foreground">Production and pipeline contribution by internal owner attribution.</p>
         </div>
-        <Card className="overflow-x-auto p-0">
+        <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-muted/40 text-left">
+            <thead className="bg-muted/35 text-left">
               <tr>
                 <th className="p-3">Rep</th><th className="p-3">Hot Leads</th><th className="p-3">Apps Submitted</th><th className="p-3">Underwriting</th><th className="p-3">Offers</th><th className="p-3">Contracts Out</th><th className="p-3">Funded Deals</th><th className="p-3">Total Funded $</th><th className="p-3">Open Approval $</th><th className="p-3">Last Activity</th><th className="p-3">Drill-down</th>
               </tr>
             </thead>
             <tbody>
               {!repRows.length ? <tr><td className="p-3 text-muted-foreground" colSpan={11}>No rep activity yet.</td></tr> : repRows.map((row) => (
-                <tr key={row.repId} className="border-t border-border">
+                <tr key={row.repId} className="border-t border-border/80 hover:bg-muted/20">
                   <td className="p-3 font-medium"><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">{row.repName}</Link></td><td className="p-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">{row.hotLeads}</Link></td><td className="p-3">{row.appsSubmitted}</td><td className="p-3">{row.underwriting}</td><td className="p-3">{row.offers}</td><td className="p-3">{row.contractsOut}</td><td className="p-3">{row.fundedDeals}</td><td className="p-3">${row.totalFundedAmount.toLocaleString()}</td><td className="p-3">${row.openApprovalAmount.toLocaleString()}</td><td className="p-3">{row.lastActivity ? new Date(row.lastActivity).toLocaleDateString() : '—'}</td><td className="p-3"><div className="flex gap-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">Hot leads</Link><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">Deals</Link></div></td>
                 </tr>
               ))}

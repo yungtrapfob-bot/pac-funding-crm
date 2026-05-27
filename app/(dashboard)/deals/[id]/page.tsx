@@ -82,13 +82,16 @@ export default async function DealDetailPage({ params, searchParams }: { params:
           : null;
 
   return <div className="space-y-4">
-    <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{deal.business_name}</h1><Badge>{deal.current_stage}</Badge></div>
+    <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
+      <div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{deal.business_name}</h1><Badge>{deal.current_stage}</Badge></div>
+      <p className="mt-2 text-sm text-muted-foreground">Assigned Internal Rep: <span className="font-medium text-foreground">{deal.assigned_rep?.full_name ?? 'Unassigned'}</span></p>
+    </div>
     {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      <Card><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
-      <Card><h2 className="mb-2 text-lg font-medium">Owner / Contact Info</h2><p>{deal.owner_name}</p><p>{deal.phone}</p><p>{deal.email}</p><p className="mt-2 text-xs text-muted-foreground">Assigned Rep: {deal.assigned_rep?.full_name ?? 'Unassigned'}</p></Card>
-      <Card><h2 className="mb-2 text-lg font-medium">Financial Snapshot</h2><p>Monthly Revenue: ${Number(deal.monthly_revenue || 0).toLocaleString()}</p><p>FICO: {deal.fico || '—'} · Positions: {deal.positions || '—'}</p><p>NSF: {deal.nsf_count || 0} · Deposits/Month: {deal.deposits || 0}</p></Card>
+      <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
+      <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Owner / Contact Info</h2><p>{deal.owner_name}</p><p>{deal.phone}</p><p>{deal.email}</p></Card>
+      <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Financial Snapshot</h2><p>Monthly Revenue: ${Number(deal.monthly_revenue || 0).toLocaleString()}</p><p>FICO: {deal.fico || '—'} · Positions: {deal.positions || '—'}</p><p>NSF: {deal.nsf_count || 0} · Deposits/Month: {deal.deposits || 0}</p></Card>
     </div>
 
     <Card><h2 className="mb-2 text-lg font-medium">Stage Movement</h2><form action={updateDealStage} className="flex gap-2"><input type="hidden" name="deal_id" value={deal.id} /><select name="current_stage" defaultValue={toUiPipelineStage(deal.current_stage)} className="rounded-md border px-3 py-2 text-sm">{PIPELINE_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><Button type="submit">Move Stage</Button></form></Card>
