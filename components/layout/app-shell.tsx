@@ -1,18 +1,5 @@
 import { Sidebar } from '@/components/layout/sidebar';
 
 export function AppShell({ children, isAdmin, userName, userEmail, userRole }: { children: React.ReactNode; isAdmin: boolean; userName: string; userEmail: string; userRole: string }) {
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="mx-auto flex w-full max-w-[1800px]">
-        <Sidebar isAdmin={isAdmin} userName={userName} userEmail={userEmail} userRole={userRole} />
-        <main className="min-w-0 flex-1 p-5 md:p-7">
-          <div className="mb-6 rounded-xl border border-border/80 bg-card/95 px-5 py-4 shadow-sm">
-            <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">Paragon Internal Platform</p>
-            <p className="text-base font-semibold text-foreground">Capital Brokerage Operations Console</p>
-          </div>
-          {children}
-        </main>
-      </div>
-    </div>
-  );
+  return <div className="min-h-screen bg-background"><div className="flex w-full"><Sidebar isAdmin={isAdmin} userName={userName} userEmail={userEmail} userRole={userRole} /><main className="min-w-0 flex-1"><header className="flex h-14 items-center justify-between border-b border-border bg-card px-6"><div className="tracked-label text-muted-foreground">Operations / Live Pipeline</div><div className="w-full max-w-md px-6"><div className="rounded-md border border-border bg-background px-3 py-1.5 text-xs text-muted-foreground">Search desk records… ⌘K</div></div><div className="flex items-center gap-2"><span className="tracked-label rounded-sm border border-border px-2 py-1 text-primary">PROD</span><a href="/hot-leads/new" className="rounded-md border border-primary/40 bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">New Hot Lead</a></div></header><div className="p-6">{children}</div></main></div></div>;
 }
