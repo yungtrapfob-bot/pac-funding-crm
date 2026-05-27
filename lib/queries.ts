@@ -16,7 +16,19 @@ export async function getDeals(role: UserRole, userId: string, repFilterId?: str
 
 export async function getDashboardMetrics(role: UserRole, userId: string) {
   const supabase = await createClient();
-  const deals = await getDeals(role, userId);
+  let dealsQuery = supabase
+    .from('deals')
+    .select('id,current_stage,funded_amount,assigned_rep_id');
+  if (role === 'rep') dealsQuery = dealsQuery.eq('assigned_rep_id', userId);
+  const { data: dealsData } = await dealsQuery;
+  const deals = dealsData ?? [];
+
+  const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
+    if (!dealStage) return false;
+    if (acceptedRawStages.includes(dealStage)) return true;
+    return acceptedUiStages.includes(toUiPipelineStage(dealStage));
+  };
+
   const funded = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded');
   const kif = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF');
 
@@ -40,7 +52,7 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
 
   return {
     totalDeals: deals.length,
-    underwriting: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'In Underwriting').length,
+    underwriting: deals.filter((d) => hasStage(d.current_stage, ['Application Submitted', 'Application Processed', 'In Underwriting'], ['In Underwriting'])).length,
     offers: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Offers').length,
     contractsOut: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Contracts Out').length,
     fundedDeals: funded.length,
