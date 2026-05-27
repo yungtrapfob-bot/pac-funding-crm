@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
@@ -75,7 +76,7 @@ export default async function HotLeadsPage({
         </Link>
       </div>
 
-      <Card>
+      <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm">
         <form className="grid grid-cols-1 gap-2 md:grid-cols-6">
           <Input name="q" defaultValue={q} placeholder="Search business, owner, phone, email, notes" />
           <select name="status" defaultValue={status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
@@ -101,19 +102,17 @@ export default async function HotLeadsPage({
                 </option>
               ))}
             </select>
-          ) : (
-            <Input name="rep" defaultValue={rep} placeholder="Assigned rep id" />
-          )}
+          ) : null}
           <button className="rounded-md border border-border px-3 py-2 text-sm">Filter Queue</button>
         </form>
       </Card>
 
-      <Card className="overflow-x-auto p-0">
+      <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
         {!hotLeads.length ? (
           <p className="p-6 text-sm">No leads found for this queue view.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-left">
+            <thead className="bg-muted/35 text-left">
               <tr>
                 <th className="p-2">Business</th><th className="p-2">Owner</th><th className="p-2">Phone</th><th className="p-2">Email</th>
                 <th className="p-2">Assigned Rep</th><th className="p-2">Follow-up Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th><th className="p-2">Notes Preview</th>
@@ -121,12 +120,16 @@ export default async function HotLeadsPage({
             </thead>
             <tbody>
               {hotLeads.map((lead) => (
-                <tr key={lead.id} className="border-t border-border hover:bg-muted/20">
+                <tr key={lead.id} className="border-t border-border/80 hover:bg-muted/20">
                   <td className="p-2"><Link href={`/hot-leads/${lead.id}`} className="font-medium text-primary hover:underline">{lead.business_name}</Link></td>
                   <td className="p-2">{lead.owner_name}</td>
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
-                  <td className="p-2">{(lead.assigned_rep_id ? assignedRepNameById.get(lead.assigned_rep_id) : null) || '—'}</td>
+                  <td className="p-2">
+                    {(lead.assigned_rep_id ? assignedRepNameById.get(lead.assigned_rep_id) : null)
+                      ? <Badge className="bg-slate-100 text-slate-700">{assignedRepNameById.get(lead.assigned_rep_id as string)}</Badge>
+                      : <span className="text-muted-foreground">Unassigned</span>}
+                  </td>
                   <td className="p-2">{lead.follow_up_status}</td>
                   <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>
