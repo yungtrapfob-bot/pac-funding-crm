@@ -5,7 +5,7 @@ import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { requireUser } from '@/lib/auth';
+import { requireRole, requireUser } from '@/lib/auth';
 import { PIPELINE_STAGES, toDbPipelineStage } from '@/lib/utils';
 
 const followUpStatusSchema = z.enum(['pending', 'contacted', 'scheduled', 'stale']);
@@ -114,6 +114,7 @@ export async function createDeal(formData: FormData) { /* unchanged */
  const supabase = await createClient(); const assignedRepId = await resolveProfileIdForUser(); const payload = Object.fromEntries(formData); const { error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: assignedRepId }); if (error) throw new Error(error.message); revalidatePath('/deals'); }
 
 export async function updateDealDetails(formData: FormData) {
+ await requireRole(['admin']);
  const supabase = await createClient(); const p = Object.fromEntries(formData);
  const fundedDate = p.funded_date ? String(p.funded_date) : null;
  const fundedAmount = Number(p.funded_amount || 0);
@@ -123,7 +124,7 @@ export async function updateDealDetails(formData: FormData) {
  if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); revalidatePath('/admin/pipeline'); revalidatePath('/dashboard'); redirect(`/deals/${p.deal_id}?saved=workflow`);
 }
 
-export async function addOffer(formData: FormData) { const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const termPayments = p.term_payments ? Number(p.term_payments) : null; const decision = String(p.decision || 'approval'); const status = decision === 'decline' ? 'declined' : 'open'; const declineReason = p.decline_reason ? `Decline reason: ${p.decline_reason}` : null; const offerPayload = { deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, term_payments: termPayments !== null && Number.isFinite(termPayments) && termPayments > 0 ? Math.floor(termPayments) : null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, stipulations: p.stipulations || null, notes: declineReason ?? (p.notes || null), status }; const { error } = await supabase.from('offers').insert(offerPayload); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); redirect(`/deals/${p.deal_id}?saved=offer`); }
+export async function addOffer(formData: FormData) { await requireRole(['admin']); const supabase = await createClient(); const p = Object.fromEntries(formData); const approvalAmount = Number(p.approval_amount || 0); const factorRate = p.factor_rate ? Number(p.factor_rate) : null; const paymentAmount = p.payment_amount ? Number(p.payment_amount) : null; const termPayments = p.term_payments ? Number(p.term_payments) : null; const decision = String(p.decision || 'approval'); const status = decision === 'decline' ? 'declined' : 'open'; const declineReason = p.decline_reason ? `Decline reason: ${p.decline_reason}` : null; const offerPayload = { deal_id: p.deal_id, funder: p.funder, approval_amount: Number.isFinite(approvalAmount) ? approvalAmount : 0, term: p.term || null, term_payments: termPayments !== null && Number.isFinite(termPayments) && termPayments > 0 ? Math.floor(termPayments) : null, payment_frequency: p.payment_frequency || null, factor_rate: factorRate !== null && Number.isFinite(factorRate) ? factorRate : null, payment_amount: paymentAmount !== null && Number.isFinite(paymentAmount) ? paymentAmount : null, stipulations: p.stipulations || null, notes: declineReason ?? (p.notes || null), status }; const { error } = await supabase.from('offers').insert(offerPayload); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); redirect(`/deals/${p.deal_id}?saved=offer`); }
 
 export async function selectOffer(formData: FormData) {
   const supabase = await createClient();
