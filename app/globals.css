@@ -1,9 +1,13 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;1,600&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
+  --bg: 220 18% 96%;
+  --panel: 220 16% 93%;
+  --card: 0 0% 100%;
+  --row-hover: 220 18% 98%;
   --bg-base: 220 18% 96%;
   --bg-surface: 0 0% 100%;
   --bg-surface-2: 220 15% 94%;
@@ -22,6 +26,10 @@
 }
 
 .dark {
+  --bg: 220 22% 5%;
+  --panel: 216 18% 8%;
+  --card: 216 16% 11%;
+  --row-hover: 216 17% 14%;
   --bg-base: 220 22% 5%;
   --bg-surface: 214 18% 8%;
   --bg-surface-2: 216 14% 10%;
@@ -37,6 +45,10 @@
   --status-danger: 358 76% 59%;
   --status-info: 218 89% 63%;
   --status-neutral: 220 9% 46%;
+}
+
+.font-display {
+  font-family: 'Fraunces', Georgia, serif;
 }
 
 body {
@@ -57,4 +69,16 @@ body {
 
 .tabular {
   font-variant-numeric: tabular-nums;
+}
+
+.mono-data {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.chip {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }

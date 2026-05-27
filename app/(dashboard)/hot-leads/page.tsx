@@ -13,6 +13,13 @@ function getSortLabel(sort: SortMode) {
   return 'Next follow-up soonest';
 }
 
+function getStatusChip(status: string) {
+  if (status === 'pending' || status === 'scheduled') return 'bg-warning/20 text-warning';
+  if (status === 'contacted') return 'bg-info/20 text-info';
+  if (status === 'stale') return 'bg-slate-500/20 text-slate-300';
+  return 'bg-success/20 text-success';
+}
+
 export default async function HotLeadsPage({
   searchParams
 }: {
@@ -66,34 +73,36 @@ export default async function HotLeadsPage({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Hot Leads / Tasks</h1>
-          <p className="text-sm text-muted-foreground">Rep call queue for follow-ups, callbacks, and submission readiness.</p>
+      <div className="space-y-3 rounded-xl border border-border bg-[hsl(var(--panel))] p-4">
+        <p className="tracked-label text-muted-foreground">Operations / Live Pipeline</p>
+        <div className="flex items-end justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <h1 className="font-display text-3xl font-semibold">Hot Leads / Tasks</h1>
+            <span className="rounded-full border border-border px-2.5 py-1 text-xs tabular text-muted-foreground">247 active</span>
+          </div>
+          <Link href="/hot-leads/new" className="rounded-md bg-primary px-3 py-2 text-sm text-white">New lead</Link>
         </div>
-        <Link href="/hot-leads/new" className="rounded-md bg-primary px-3 py-2 text-sm text-white">
-          New lead
-        </Link>
+        <div className="flex items-center gap-2 text-xs">
+          {['All', 'Mine', 'Unassigned', 'Stale'].map((tab) => <button key={tab} className="rounded-full border border-border px-3 py-1.5 text-muted-foreground hover:text-foreground">{tab}</button>)}
+        </div>
       </div>
 
-      <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm">
-        <form className="grid grid-cols-1 gap-2 md:grid-cols-6">
-          <Input name="q" defaultValue={q} placeholder="Search business, owner, phone, email, notes" />
-          <select name="status" defaultValue={status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+      <Card className="rounded-xl border border-[hsl(var(--border-subtle))] bg-[hsl(var(--card))] p-3 shadow-sm">
+        <form className="flex flex-wrap items-center gap-2">
+          <Input name="q" defaultValue={q} placeholder="Search business, owner, phone, email, notes" className="min-w-[320px] flex-1" />
+          <select name="status" defaultValue={status} className="rounded-full border border-border bg-transparent px-3 py-2 text-xs">
             <option value="">All statuses</option>
             <option value="pending">pending</option>
             <option value="contacted">contacted</option>
             <option value="scheduled">scheduled</option>
             <option value="stale">stale</option>
           </select>
-          <Input name="outcome" defaultValue={outcome} placeholder="Outcome tag" />
-          <select name="sort" defaultValue={sort} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+          <select name="sort" defaultValue={sort} className="rounded-full border border-border bg-transparent px-3 py-2 text-xs">
             <option value="followup_soonest">Next follow-up soonest</option>
             <option value="newest_created">Newest created</option>
             <option value="stale_followups">Stale follow-ups</option>
           </select>
-          {isAdmin ? (
-            <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+          {isAdmin ? (<select name="rep" defaultValue={rep} className="rounded-full border border-border bg-transparent px-3 py-2 text-xs">
               <option value="">All reps</option>
               <option value="unassigned">Unassigned</option>
               {(reps ?? []).map((internalRep) => (
@@ -101,39 +110,38 @@ export default async function HotLeadsPage({
                   {internalRep.full_name ?? internalRep.id}
                 </option>
               ))}
-            </select>
-          ) : null}
-          <button className="rounded-md border border-border px-3 py-2 text-sm">Filter Queue</button>
+            </select>) : null}
+          <button className="rounded-full border border-border px-3 py-2 text-xs">Saved views</button>
         </form>
       </Card>
 
-      <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
+      <Card className="overflow-x-auto rounded-xl border border-[hsl(var(--border-subtle))] bg-[hsl(var(--card))] p-0 shadow-sm">
         {!hotLeads.length ? (
           <p className="p-6 text-sm">No leads found for this queue view.</p>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-muted/35 text-left">
+            <thead className="sticky top-0 z-10 bg-[hsl(var(--panel))] text-left">
               <tr>
-                <th className="p-2">Business</th><th className="p-2">Owner</th><th className="p-2">Phone</th><th className="p-2">Email</th>
-                <th className="p-2">Assigned Rep</th><th className="p-2">Follow-up Status</th><th className="p-2">Next Follow-up</th><th className="p-2">Outcome</th><th className="p-2">Notes Preview</th>
+                <th className="px-3 py-[14px]">Business</th><th className="px-3 py-[14px]">Owner</th><th className="px-3 py-[14px]">Phone</th><th className="px-3 py-[14px]">Email</th>
+                <th className="px-3 py-[14px]">Assigned Rep</th><th className="px-3 py-[14px]">Follow-up Status</th><th className="px-3 py-[14px]">Next Follow-up</th><th className="px-3 py-[14px]">Outcome</th><th className="px-3 py-[14px]">Notes Preview</th>
               </tr>
             </thead>
             <tbody>
               {hotLeads.map((lead) => (
-                <tr key={lead.id} className="border-t border-border/80 hover:bg-muted/20">
-                  <td className="p-2"><Link href={`/hot-leads/${lead.id}`} className="font-medium text-primary hover:underline">{lead.business_name}</Link></td>
-                  <td className="p-2">{lead.owner_name}</td>
-                  <td className="p-2">{lead.phone || '—'}</td>
-                  <td className="p-2">{lead.email || '—'}</td>
-                  <td className="p-2">
+                <tr key={lead.id} className="border-t border-border/80 odd:bg-white/[0.02] hover:border-l-2 hover:border-l-primary hover:bg-[hsl(var(--row-hover))]">
+                  <td className="px-3 py-[14px]"><Link href={`/hot-leads/${lead.id}`} className="font-medium text-foreground hover:text-primary">{lead.business_name}</Link></td>
+                  <td className="px-3 py-[14px]">{lead.owner_name}</td>
+                  <td className="mono-data px-3 py-[14px]">{lead.phone || '—'}</td>
+                  <td className="mono-data px-3 py-[14px]">{lead.email || '—'}</td>
+                  <td className="px-3 py-[14px]">
                     {(lead.assigned_rep_id ? assignedRepNameById.get(lead.assigned_rep_id) : null)
                       ? <Badge className="bg-slate-100 text-slate-700">{assignedRepNameById.get(lead.assigned_rep_id as string)}</Badge>
                       : <span className="text-muted-foreground">Unassigned</span>}
                   </td>
-                  <td className="p-2">{lead.follow_up_status}</td>
-                  <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
-                  <td className="p-2">{lead.outcome_tag || '—'}</td>
-                  <td className="max-w-xs truncate p-2 text-muted-foreground">{lead.notes || '—'}</td>
+                  <td className="px-3 py-[14px]"><span className={`chip inline-flex rounded-full px-2 py-1 ${getStatusChip(lead.follow_up_status ?? '')}`}>{lead.follow_up_status || 'ready'}</span></td>
+                  <td className="mono-data px-3 py-[14px]">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
+                  <td className="mono-data px-3 py-[14px]">{lead.outcome_tag || '—'}</td>
+                  <td className="max-w-xs truncate px-3 py-[14px] text-muted-foreground">{lead.notes || '—'}</td>
                 </tr>
               ))}
             </tbody>
