@@ -6,7 +6,7 @@ export async function getDeals(role: UserRole, userId: string, repFilterId?: str
   const supabase = await createClient();
   let query = supabase
     .from('deals')
-    .select('*, owner_profile:owner_profile_id(full_name), assigned_rep:assigned_rep_id(full_name)')
+    .select('*, assigned_rep:assigned_rep_id(full_name)')
     .order('submitted_at', { ascending: false });
   if (role === 'rep') query = query.eq('assigned_rep_id', userId);
   if (role === 'admin' && repFilterId) query = query.eq('assigned_rep_id', repFilterId);
@@ -32,7 +32,7 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
   const funded = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded');
   const kif = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF');
 
-  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,submission_ready');
+  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,follow_up_status,outcome_tag');
   if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
   const { data: leads } = await leadsQuery;
 
@@ -61,6 +61,10 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
     totalHotLeads: hotLeads.length,
     dueToday,
     overdueFollowups,
-    readyForUnderwriting: hotLeads.filter((l) => Boolean(l.submission_ready)).length
+    readyForUnderwriting: hotLeads.filter((l) => {
+      const status = String(l.follow_up_status ?? '').toLowerCase();
+      const outcome = String(l.outcome_tag ?? '').toLowerCase();
+      return status === 'scheduled' || outcome.includes('underwriting') || outcome.includes('docs requested');
+    }).length
   };
 }

@@ -13,7 +13,7 @@ export default async function RepDashboardPage() {
 
   let leadsQuery = supabase
     .from('hot_leads')
-    .select('id,business_name,owner_name,phone,email,follow_up_status,next_follow_up_date,submission_ready')
+    .select('id,business_name,owner_name,phone,email,follow_up_status,next_follow_up_date')
     .order('next_follow_up_date', { ascending: true, nullsFirst: false })
     .limit(10);
   if (profile.role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', profile.id);
