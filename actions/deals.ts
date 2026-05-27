@@ -16,8 +16,8 @@ const hotLeadSchema = z.object({ business_name: z.string().min(2), owner_name: z
 export type HotLeadFormState = { status: 'idle' | 'error'; message?: string; fieldErrors?: Record<string, string[] | undefined> };
 
 async function resolveProfileIdForUser() {
-  const { profile } = await requireUser();
-  return profile.id;
+  const { user, profile } = await requireUser();
+  return profile.id ?? user.id;
 }
 
 function resolveInternalOwnerId(record: { owner_profile_id?: string | null; assigned_rep_id?: string | null }) {

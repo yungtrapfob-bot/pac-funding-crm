@@ -38,7 +38,9 @@ export default async function HotLeadsPage({
     ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
     : { data: [] };
 
-  let query = supabase.from('hot_leads').select('*, assigned_rep:assigned_rep_id(full_name)');
+  let query = supabase
+    .from('hot_leads')
+    .select('*, assigned_rep:assigned_rep_id(full_name), owner_profile:owner_profile_id(full_name)');
 
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
   if (isAdmin && rep) query = rep === 'unassigned' ? query.is('assigned_rep_id', null) : query.eq('assigned_rep_id', rep);
@@ -126,7 +128,7 @@ export default async function HotLeadsPage({
                   <td className="p-2">{lead.owner_name}</td>
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
-                  <td className="p-2">{getAssignedRepName(lead.assigned_rep) || '—'}</td>
+                  <td className="p-2">{getAssignedRepName(lead.assigned_rep) || getAssignedRepName(lead.owner_profile) || '—'}</td>
                   <td className="p-2">{lead.follow_up_status}</td>
                   <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>
