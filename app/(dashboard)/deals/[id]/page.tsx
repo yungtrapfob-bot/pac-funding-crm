@@ -30,7 +30,7 @@ function formatDisplayDate(value?: string | null) {
 export default async function DealDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
-  let q = supabase.from('deals').select('*').eq('id', params.id);
+  let q = supabase.from('deals').select('*, assigned_rep:assigned_rep_id(full_name)').eq('id', params.id);
   if (profile.role === 'rep') q = q.or(`assigned_rep_id.eq.${profile.id},closer_rep_id.eq.${profile.id}`);
 
   const { data: dealRows, error: dealError } = await q.limit(1);
@@ -87,7 +87,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
-      <Card><h2 className="mb-2 text-lg font-medium">Owner / Contact Info</h2><p>{deal.owner_name}</p><p>{deal.phone}</p><p>{deal.email}</p></Card>
+      <Card><h2 className="mb-2 text-lg font-medium">Owner / Contact Info</h2><p>{deal.owner_name}</p><p>{deal.phone}</p><p>{deal.email}</p><p className="mt-2 text-xs text-muted-foreground">Assigned Rep: {deal.assigned_rep?.full_name ?? 'Unassigned'}</p></Card>
       <Card><h2 className="mb-2 text-lg font-medium">Financial Snapshot</h2><p>Monthly Revenue: ${Number(deal.monthly_revenue || 0).toLocaleString()}</p><p>FICO: {deal.fico || '—'} · Positions: {deal.positions || '—'}</p><p>NSF: {deal.nsf_count || 0} · Deposits/Month: {deal.deposits || 0}</p></Card>
     </div>
 

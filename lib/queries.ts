@@ -2,13 +2,14 @@ import { createClient } from '@/lib/supabase/server';
 import type { UserRole } from '@/types/db';
 import { toUiPipelineStage } from '@/lib/utils';
 
-export async function getDeals(role: UserRole, userId: string) {
+export async function getDeals(role: UserRole, userId: string, repFilterId?: string) {
   const supabase = await createClient();
   let query = supabase
     .from('deals')
     .select('*, owner_profile:owner_profile_id(full_name), assigned_rep:assigned_rep_id(full_name)')
     .order('submitted_at', { ascending: false });
   if (role === 'rep') query = query.eq('assigned_rep_id', userId);
+  if (role === 'admin' && repFilterId) query = query.eq('assigned_rep_id', repFilterId);
   const { data } = await query;
   return data ?? [];
 }

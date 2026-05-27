@@ -15,7 +15,7 @@ function getSortLabel(sort: SortMode) {
 export default async function HotLeadsPage({
   searchParams
 }: {
-  searchParams: { q?: string; status?: string; sort?: string; outcome?: string };
+  searchParams: { q?: string; status?: string; sort?: string; outcome?: string; rep?: string };
 }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
@@ -23,10 +23,12 @@ export default async function HotLeadsPage({
   const status = searchParams.status?.trim() ?? '';
   const outcome = searchParams.outcome?.trim() ?? '';
   const sort = (searchParams.sort?.trim() as SortMode) || 'followup_soonest';
+  const rep = searchParams.rep?.trim() ?? '';
 
   let query = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)');
 
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
+  if (profile.role === 'admin' && rep) query = query.eq('assigned_rep_id', rep);
   if (status) query = query.eq('follow_up_status', status);
   if (outcome) query = query.eq('outcome_tag', outcome);
   if (q) {
@@ -61,7 +63,7 @@ export default async function HotLeadsPage({
       </div>
 
       <Card>
-        <form className="grid grid-cols-1 gap-2 md:grid-cols-5">
+        <form className="grid grid-cols-1 gap-2 md:grid-cols-6">
           <Input name="q" defaultValue={q} placeholder="Search business, owner, phone, email, notes" />
           <select name="status" defaultValue={status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
             <option value="">All statuses</option>
@@ -76,6 +78,7 @@ export default async function HotLeadsPage({
             <option value="newest_created">Newest created</option>
             <option value="stale_followups">Stale follow-ups</option>
           </select>
+          <Input name="rep" defaultValue={rep} placeholder="Assigned rep id" />
           <button className="rounded-md border border-border px-3 py-2 text-sm">Filter Queue</button>
         </form>
       </Card>

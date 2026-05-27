@@ -7,7 +7,6 @@ interface DealRow {
   owner_name: string;
   current_stage: string;
   submitted_at: string;
-  owner_profile?: { full_name?: string | null } | null;
   assigned_rep?: { full_name?: string | null } | null;
 }
 
@@ -36,7 +35,7 @@ export function DealsTable({ deals }: { deals: DealRow[] }) {
               <td className="p-2">
                 <div>{deal.owner_name}</div>
                 <div className="text-xs text-muted-foreground">
-                  Rep: {deal.owner_profile?.full_name ?? deal.assigned_rep?.full_name ?? 'Unassigned'}
+                  Assigned Rep: {deal.assigned_rep?.full_name ?? 'Unassigned'}
                 </div>
               </td>
               <td className="p-2">
