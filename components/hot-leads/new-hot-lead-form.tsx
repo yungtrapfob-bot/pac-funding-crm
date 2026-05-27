@@ -38,7 +38,7 @@ export function NewHotLeadForm() {
       <div><select name="follow_up_status" defaultValue="pending" className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option></select></div>
       <div><Input type="datetime-local" name="next_follow_up_date" /><ErrorText message={state.fieldErrors?.next_follow_up_date} /></div>
       <Input name="outcome_tag" placeholder="Outcome tag" />
-      <Input name="notes" placeholder="Notes" className="md:col-span-2" />
+      <textarea name="notes" placeholder="Initial contact context / notes" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
       <SubmitButton />
     </form>
   );
