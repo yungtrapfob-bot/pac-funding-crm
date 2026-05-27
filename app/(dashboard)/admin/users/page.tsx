@@ -1,16 +1,12 @@
 import { CreateUserForm } from '@/components/admin/create-user-form';
 import { reconcileInternalAuthUsers } from '@/actions/admin-users';
 import { requireRole } from '@/lib/auth';
-import { createClient } from '@/lib/supabase/server';
+import { getInternalUserProfiles } from '@/lib/internal-users';
 
 export default async function UsersPage() {
   await requireRole(['admin']);
   await reconcileInternalAuthUsers();
-  const supabase = await createClient();
-  const { data: users } = await supabase
-    .from('profiles')
-    .select('*')
-    .order('created_at', { ascending: false });
+  const users = await getInternalUserProfiles();
 
   return (
     <div className="space-y-4">

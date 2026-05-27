@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/card';
 import { reconcileInternalAuthUsers } from '@/actions/admin-users';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { getInternalUserProfiles } from '@/lib/internal-users';
 import { toUiPipelineStage } from '@/lib/utils';
 
 export default async function AdminDashboardPage() {
@@ -12,7 +13,6 @@ export default async function AdminDashboardPage() {
   const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at');
   const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,created_at');
   const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
-  const { data: profiles } = await supabase.from('profiles').select('id,full_name,role');
 
 
   const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
@@ -29,8 +29,7 @@ export default async function AdminDashboardPage() {
   const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
   const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
-  const internalRoleWhitelist = new Set(['admin', 'rep']);
-  const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').trim().toLowerCase()));
+  const internalProfiles = await getInternalUserProfiles();
 
   const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
   type RepMetrics = {
