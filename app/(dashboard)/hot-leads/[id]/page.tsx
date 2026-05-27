@@ -9,12 +9,31 @@ import { createClient } from '@/lib/supabase/server';
 function formatDateTimeLocal(value?: string | null) {
   if (!value) return '';
   const date = new Date(value);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date);
+  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+  const year = get('year');
+  const month = get('month');
+  const day = get('day');
+  const hours = get('hour');
+  const minutes = get('minute');
   return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function formatPacificDateTime(value?: string | null) {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(value));
 }
 
 export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string } }) {
@@ -69,7 +88,6 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
           <Input type="datetime-local" name="next_follow_up_date" defaultValue={formatDateTimeLocal(lead.next_follow_up_date)} />
           <Input name="outcome_tag" defaultValue={lead.outcome_tag ?? ''} placeholder="Outcome tag (interested, docs requested, not qualified, etc.)" className="md:col-span-2" />
           <textarea name="activity_note" placeholder="Add follow-up activity note (new timeline entry)" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
-          <textarea name="notes" defaultValue={lead.notes ?? ''} placeholder="Legacy notes (existing blob preserved)." className="min-h-28 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
           <Button type="submit" className="md:col-span-2">Save lead updates</Button>
         </form>
       </Card>
@@ -80,13 +98,11 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
           {activityRows?.length ? activityRows.map((item) => {
             const details = (item.details ?? {}) as Record<string, string | null | undefined>;
             return <div key={item.id} className="rounded-md border border-border p-3 text-sm">
-              <p className="font-medium">{((Array.isArray(item.actor) ? item.actor[0] : item.actor) as { full_name?: string } | null)?.full_name ?? 'Unknown user'} · {new Date(item.created_at).toLocaleString()}</p>
+              <p className="font-medium">{((Array.isArray(item.actor) ? item.actor[0] : item.actor) as { full_name?: string } | null)?.full_name ?? 'Unknown user'} · {formatPacificDateTime(item.created_at)}</p>
               <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{details.note ?? 'Activity update.'}</p>
-              {details.scheduled_follow_up_at ? <p className="mt-1 text-xs">Follow-up scheduled for {new Date(details.scheduled_follow_up_at).toLocaleString()}</p> : null}
+              {details.scheduled_follow_up_at ? <p className="mt-1 text-xs">Follow-up scheduled for {formatPacificDateTime(details.scheduled_follow_up_at)} (Pacific)</p> : null}
             </div>;
           }) : <p className="text-sm text-muted-foreground">No timeline activity yet.</p>}
-
-          {lead.notes ? <div className="rounded-md border border-dashed border-border p-3 text-sm"><p className="font-medium">Legacy notes</p><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{lead.notes}</p></div> : null}
         </div>
       </Card>
     </div>
