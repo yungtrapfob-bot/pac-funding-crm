@@ -82,3 +82,30 @@ body {
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
+
+@layer components {
+  .panel-dark {
+    @apply rounded-lg border border-border bg-card text-foreground;
+  }
+
+  .panel-dark-muted {
+    @apply rounded-lg border border-border/80 bg-muted/30 text-foreground;
+  }
+
+  .panel-mint {
+    @apply rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-950;
+  }
+
+  .panel-mint-subtle {
+    @apply rounded-lg border border-emerald-200 bg-emerald-100/80 text-emerald-950;
+  }
+
+  .panel-mint .text-muted-foreground,
+  .panel-mint-subtle .text-muted-foreground {
+    @apply text-emerald-900/90;
+  }
+
+  .badge-mint-strong {
+    @apply inline-flex items-center rounded-sm border border-emerald-700/20 bg-emerald-800 px-2 py-0.5 tracked-label text-emerald-50;
+  }
+}
