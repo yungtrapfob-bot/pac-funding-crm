@@ -111,7 +111,6 @@ export async function updateHotLead(formData: FormData) {
     email: p.email,
     follow_up_status: followUpStatusSchema.parse(p.follow_up_status),
     next_follow_up_date: followUpAt,
-    notes: p.notes,
     outcome_tag: p.outcome_tag,
     last_contact_date: new Date().toISOString().slice(0, 10),
     assigned_rep_id: ownerId
