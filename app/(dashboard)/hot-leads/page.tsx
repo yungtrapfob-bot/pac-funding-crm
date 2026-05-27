@@ -6,10 +6,18 @@ import { createClient } from '@/lib/supabase/server';
 
 type SortMode = 'followup_soonest' | 'newest_created' | 'stale_followups';
 
+type RepRelation = { full_name: string | null } | { full_name: string | null }[] | null | undefined;
+
 function getSortLabel(sort: SortMode) {
   if (sort === 'newest_created') return 'Newest created';
   if (sort === 'stale_followups') return 'Stale follow-ups';
   return 'Next follow-up soonest';
+}
+
+function getAssignedRepName(relation: RepRelation) {
+  if (!relation) return null;
+  if (Array.isArray(relation)) return relation[0]?.full_name ?? null;
+  return relation.full_name ?? null;
 }
 
 export default async function HotLeadsPage({
@@ -24,11 +32,16 @@ export default async function HotLeadsPage({
   const outcome = searchParams.outcome?.trim() ?? '';
   const sort = (searchParams.sort?.trim() as SortMode) || 'followup_soonest';
   const rep = searchParams.rep?.trim() ?? '';
+  const isAdmin = profile.role === 'admin';
 
-  let query = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)');
+  const { data: reps } = isAdmin
+    ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
+    : { data: [] };
+
+  let query = supabase.from('hot_leads').select('*, assigned_rep:assigned_rep_id(full_name)');
 
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
-  if (profile.role === 'admin' && rep) query = query.eq('assigned_rep_id', rep);
+  if (isAdmin && rep) query = rep === 'unassigned' ? query.is('assigned_rep_id', null) : query.eq('assigned_rep_id', rep);
   if (status) query = query.eq('follow_up_status', status);
   if (outcome) query = query.eq('outcome_tag', outcome);
   if (q) {
@@ -78,7 +91,19 @@ export default async function HotLeadsPage({
             <option value="newest_created">Newest created</option>
             <option value="stale_followups">Stale follow-ups</option>
           </select>
-          <Input name="rep" defaultValue={rep} placeholder="Assigned rep id" />
+          {isAdmin ? (
+            <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm">
+              <option value="">All reps</option>
+              <option value="unassigned">Unassigned</option>
+              {(reps ?? []).map((internalRep) => (
+                <option key={internalRep.id} value={internalRep.id}>
+                  {internalRep.full_name ?? internalRep.id}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <Input name="rep" defaultValue={rep} placeholder="Assigned rep id" />
+          )}
           <button className="rounded-md border border-border px-3 py-2 text-sm">Filter Queue</button>
         </form>
       </Card>
@@ -101,7 +126,7 @@ export default async function HotLeadsPage({
                   <td className="p-2">{lead.owner_name}</td>
                   <td className="p-2">{lead.phone || '—'}</td>
                   <td className="p-2">{lead.email || '—'}</td>
-                  <td className="p-2">{lead.profiles?.full_name || '—'}</td>
+                  <td className="p-2">{getAssignedRepName(lead.assigned_rep) || '—'}</td>
                   <td className="p-2">{lead.follow_up_status}</td>
                   <td className="p-2">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="p-2">{lead.outcome_tag || '—'}</td>
