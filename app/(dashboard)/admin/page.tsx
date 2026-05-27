@@ -22,10 +22,17 @@ export default async function AdminDashboardPage() {
   const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
   const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
   const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
-  const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.owner_profile_id ?? d.assigned_rep_id]));
-
   const internalRoleWhitelist = new Set(['admin', 'rep']);
   const internalProfiles = (profiles ?? []).filter((profile) => internalRoleWhitelist.has(String(profile.role ?? '').toLowerCase()));
+  const internalProfileIds = new Set(internalProfiles.map((profile) => profile.id));
+
+  const resolveInternalRepId = (ownerProfileId: string | null, assignedRepId: string | null) => {
+    if (ownerProfileId && internalProfileIds.has(ownerProfileId)) return ownerProfileId;
+    if (assignedRepId && internalProfileIds.has(assignedRepId)) return assignedRepId;
+    return null;
+  };
+
+  const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, resolveInternalRepId(d.owner_profile_id, d.assigned_rep_id)]));
   type RepMetrics = {
     hotLeads: number;
     appsSubmitted: number;
@@ -60,7 +67,7 @@ export default async function AdminDashboardPage() {
   };
 
   (hotLeads ?? []).forEach((lead) => {
-    const leadOwnerId = lead.owner_profile_id ?? lead.assigned_rep_id;
+    const leadOwnerId = resolveInternalRepId(lead.owner_profile_id, lead.assigned_rep_id);
     if (!leadOwnerId) return;
     const metrics = ensureRepMetrics(leadOwnerId);
     metrics.hotLeads += 1;
@@ -68,7 +75,7 @@ export default async function AdminDashboardPage() {
   });
 
   (deals ?? []).forEach((deal) => {
-    const dealOwnerId = deal.owner_profile_id ?? deal.assigned_rep_id;
+    const dealOwnerId = resolveInternalRepId(deal.owner_profile_id, deal.assigned_rep_id);
     if (!dealOwnerId) return;
     const metrics = ensureRepMetrics(dealOwnerId);
     metrics.appsSubmitted += 1;
