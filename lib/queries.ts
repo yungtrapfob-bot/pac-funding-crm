@@ -14,6 +14,39 @@ export async function getDeals(role: UserRole, userId: string, repFilterId?: str
   return data ?? [];
 }
 
+export async function getProcessingQueue() {
+  const supabase = await createClient();
+  const { data: deals } = await supabase
+    .from('deals')
+    .select('id,business_name,owner_name,monthly_revenue,fico,positions,nsf_count,deposits,submitted_at,current_stage,notes,internal_notes,assigned_rep:assigned_rep_id(full_name)')
+    .order('submitted_at', { ascending: false });
+
+  const dealIds = (deals ?? []).map((deal) => deal.id);
+  if (!dealIds.length) return [];
+
+  const { data: files } = await supabase
+    .from('deal_files')
+    .select('deal_id,file_type')
+    .in('deal_id', dealIds);
+
+  const filesByDeal = new Map<string, Set<string>>();
+  for (const file of files ?? []) {
+    const existing = filesByDeal.get(file.deal_id) ?? new Set<string>();
+    existing.add(String(file.file_type ?? '').toLowerCase());
+    filesByDeal.set(file.deal_id, existing);
+  }
+
+  return (deals ?? []).map((deal) => {
+    const fileTypes = filesByDeal.get(deal.id) ?? new Set<string>();
+    return {
+      ...deal,
+      hasApplication: fileTypes.has('application'),
+      hasStatements: fileTypes.has('statement'),
+      hasFiles: fileTypes.size > 0
+    };
+  });
+}
+
 export async function getDashboardMetrics(role: UserRole, userId: string) {
   const supabase = await createClient();
   let dealsQuery = supabase

@@ -27,7 +27,7 @@ function formatDisplayDate(value?: string | null) {
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-export default async function DealDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string } }) {
+export default async function DealDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; context?: string } }) {
   const { profile } = await requireUser();
   const isAdmin = profile.role === 'admin';
   const supabase = await createClient();
@@ -80,7 +80,8 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     : searchParams?.saved === 'offer' ? 'Funder response saved successfully.'
       : searchParams?.saved === 'selected_offer' ? 'Offer selected successfully.'
         : searchParams?.saved === 'stage' ? 'Stage updated successfully.'
-          : null;
+        : null;
+  const openedFromProcessing = searchParams?.context === 'processing';
 
   return <div className="space-y-4">
     <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
@@ -88,6 +89,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
       <p className="mt-2 text-sm text-muted-foreground">Assigned Internal Rep: <span className="font-medium text-foreground">{deal.assigned_rep?.full_name ?? 'Unassigned'}</span></p>
     </div>
     {savedMessage ? <div className="panel-mint p-3 text-sm">{savedMessage}</div> : null}
+    {openedFromProcessing ? <div className="rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">Opened from Processing Queue. Review docs, notes, financials, stage, and assigned rep before lender routing.</div> : null}
 
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
@@ -109,6 +111,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     </Card>
 
     <Card><h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2><div className="space-y-2 text-sm">{fileRows.length ? fileRows.map((f) => <div key={f.id} className="rounded border p-3"><p className="font-medium">{f.file_type}</p><p className="break-all text-muted-foreground">{f.path}</p>{f.signedUrl ? <div className="mt-2"><Link href={f.signedUrl} target="_blank" className="text-primary underline">Open / Download</Link></div> : <p className="mt-2 text-xs text-muted-foreground">File link unavailable. Please re-open this page to refresh signed links.</p>}</div>) : <p className="text-muted-foreground">No files uploaded yet.</p>}</div></Card>
+    <Card><h2 className="mb-2 text-lg font-medium">Processing Submission Desk (Future Funder Routing)</h2><div className="grid gap-3 text-sm md:grid-cols-3"><div className="rounded-md border border-dashed border-border/80 bg-muted/30 p-3"><p className="font-medium">Selected Funders</p><p className="mt-1 text-muted-foreground">Placeholder for chosen lender targets and routing priority.</p></div><div className="rounded-md border border-dashed border-border/80 bg-muted/30 p-3"><p className="font-medium">Submission Method</p><p className="mt-1 text-muted-foreground">Placeholder for API / email / portal channel selection and handoff mode.</p></div><div className="rounded-md border border-dashed border-border/80 bg-muted/30 p-3"><p className="font-medium">Submission Log</p><p className="mt-1 text-muted-foreground">Placeholder for outbound attempt history, timestamps, and statuses.</p></div></div></Card>
 
     <Card><h2 className="mb-2 text-lg font-medium">Payout / Renewal Info</h2><p>Funded Amount: ${Number(deal.funded_amount || 0).toLocaleString()}</p><p>Funded Date: {formatDisplayDate(deal.funded_date) || '—'}</p><p>Commission Payout Date: {commissionPayoutDisplay || 'Cannot calculate until funded date is set.'}</p><p>50% Paid / Renewal Date: {fiftyPercentPaidDisplay || renewalDateMessage || '—'}</p><p className="mt-2 text-xs text-muted-foreground">Calculated from funded date and selected offer schedule when available.</p></Card>
   </div>;
