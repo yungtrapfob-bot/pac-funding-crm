@@ -8,6 +8,8 @@ import { requireUser } from '@/lib/auth';
 import { addBusinessDays, calculateFiftyPercentPaidDate, PIPELINE_STAGES, toUiPipelineStage } from '@/lib/utils';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
+import { evaluateFunders, type FunderMasterRecord } from '@/lib/funder-routing';
+import { DealRoutingPanel } from '@/components/deals/deal-routing-panel';
 
 
 
@@ -40,6 +42,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
   if (!deal) return <p>Deal not found.</p>;
 
   const { data: offers } = await supabase.from('offers').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
+  const { data: funders } = await supabase.from('funder_master').select('funder_name,positions,states,min_monthly_revenue,min_time_in_business_months,min_fico,max_funding,payment_frequency,required_docs,industry_yes,industry_maybe,industry_no,notes,submission_method,submission_endpoint,matrix_row').order('funder_name');
   const { data: files } = await supabase.from('deal_files').select('*').eq('deal_id', params.id).order('created_at', { ascending: false });
   const fileRows = await Promise.all((files ?? []).map(async (file) => {
     const { data } = await supabase.storage.from('deal-files').createSignedUrl(file.path, 60 * 60);
@@ -82,6 +85,17 @@ export default async function DealDetailPage({ params, searchParams }: { params:
         : searchParams?.saved === 'stage' ? 'Stage updated successfully.'
         : null;
   const openedFromProcessing = searchParams?.context === 'processing';
+  const routingResults = evaluateFunders((funders ?? []) as FunderMasterRecord[], {
+    monthlyRevenue: deal.monthly_revenue ?? null,
+    timeInBusinessMonths: deal.time_in_business_months ?? null,
+    fico: deal.fico ?? null,
+    positions: deal.positions ?? null,
+    nsfCount: deal.nsf_count ?? null,
+    depositsPerMonth: deal.deposits ?? null,
+    state: deal.state ?? null,
+    industry: deal.industry ?? null,
+    requestedAmount: deal.funded_amount ?? null
+  });
 
   return <div className="space-y-4">
     <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
@@ -103,6 +117,8 @@ export default async function DealDetailPage({ params, searchParams }: { params:
       <p className="mt-3 text-sm text-muted-foreground">Offer selected: {selectedSummary || '—'}</p>
     </Card>
 
+
+    <DealRoutingPanel results={routingResults} />
 
     <Card><h2 className="mb-2 text-lg font-medium">Selected Offer</h2>{selected ? <div className="panel-mint p-3 text-sm"><p className="font-semibold text-emerald-950">{selected.funder}</p><p className="text-emerald-900">Amount: ${Number(selected.approval_amount || 0).toLocaleString()}</p><p className="text-emerald-900">Term: {selected.term || '—'}</p><p className="text-emerald-900">Payment Frequency: {selected.payment_frequency || '—'}</p><p className="text-emerald-900">Factor: {selected.factor_rate ?? '—'}</p><p className="text-emerald-900">Payment Amount: ${Number(selected.payment_amount || 0).toLocaleString()}</p><p className="text-emerald-900">Total Payback: ${Number(selected.total_payback || 0).toLocaleString()}</p><p className="text-emerald-900">Stipulations: {selected.stipulations || '—'}</p></div> : <p className="text-sm text-muted-foreground">No offer selected yet.</p>}</Card>
 
