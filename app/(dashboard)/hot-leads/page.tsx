@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { DeleteHotLeadForm } from '@/components/hot-leads/delete-hot-lead-form';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
@@ -126,7 +125,7 @@ export default async function HotLeadsPage({
             <thead className="sticky top-0 z-10 bg-[hsl(var(--panel))] text-left">
               <tr>
                 <th className="px-3 py-[14px]">Business</th><th className="px-3 py-[14px]">Owner</th><th className="px-3 py-[14px]">Phone</th><th className="px-3 py-[14px]">Email</th>
-                <th className="px-3 py-[14px]">Assigned Rep</th><th className="px-3 py-[14px]">Follow-up Status</th><th className="px-3 py-[14px]">Next Follow-up</th><th className="px-3 py-[14px]">Outcome</th><th className="px-3 py-[14px]">Notes Preview</th>{isAdmin ? <th className="px-3 py-[14px]">Actions</th> : null}
+                <th className="px-3 py-[14px]">Assigned Rep</th><th className="px-3 py-[14px]">Follow-up Status</th><th className="px-3 py-[14px]">Next Follow-up</th><th className="px-3 py-[14px]">Outcome</th><th className="px-3 py-[14px]">Notes Preview</th>
               </tr>
             </thead>
             <tbody>
@@ -145,7 +144,6 @@ export default async function HotLeadsPage({
                   <td className="mono-data px-3 py-[14px]">{lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : '—'}</td>
                   <td className="mono-data px-3 py-[14px]">{lead.outcome_tag || '—'}</td>
                   <td className="max-w-xs truncate px-3 py-[14px] text-muted-foreground">{lead.notes || '—'}</td>
-                  {isAdmin ? <td className="px-3 py-[14px]"><DeleteHotLeadForm leadId={lead.id} businessName={lead.business_name ?? 'this lead'} compact /></td> : null}
                 </tr>
               ))}
             </tbody>

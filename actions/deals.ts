@@ -351,6 +351,10 @@ export async function deleteHotLead(formData: FormData) {
   const leadId = String(formData.get('hot_lead_id') ?? '');
   if (!leadId) redirect('/hot-leads?delete=missing');
 
+  const { data: lead, error: leadError } = await adminSupabase.from('hot_leads').select('id').eq('id', leadId).maybeSingle();
+  if (leadError) throw new Error(leadError.message);
+  if (!lead) redirect('/hot-leads?delete=missing');
+
   const { data: conversionActivity, error: conversionError } = await adminSupabase
     .from('activities')
     .select('deal_id')
@@ -360,7 +364,18 @@ export async function deleteHotLead(formData: FormData) {
     .limit(1)
     .maybeSingle();
   if (conversionError) throw new Error(conversionError.message);
-  if (conversionActivity?.deal_id) redirect(`/hot-leads/${leadId}?delete=converted`);
+
+  const { data: convertedDeal, error: convertedDealError } = conversionActivity?.deal_id
+    ? { data: null, error: null }
+    : await adminSupabase
+        .from('deals')
+        .select('id')
+        .eq('converted_from_hot_lead_id', leadId)
+        .limit(1)
+        .maybeSingle();
+  if (convertedDealError) throw new Error(convertedDealError.message);
+
+  if (conversionActivity?.deal_id || convertedDeal?.id) redirect(`/hot-leads/${leadId}?delete=converted`);
 
   const { error } = await adminSupabase.from('hot_leads').delete().eq('id', leadId);
   if (error) throw new Error(error.message);

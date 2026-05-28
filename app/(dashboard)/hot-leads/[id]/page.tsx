@@ -58,9 +58,7 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
     : searchParams?.created === '1'
       ? 'Hot lead created successfully.'
       : null;
-  const deleteMessage = searchParams?.delete === 'converted'
-    ? 'Converted leads are protected from deletion. Open the created deal instead.'
-    : null;
+  const attemptedConvertedDelete = searchParams?.delete === 'converted';
 
   const { data: conversionActivity } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle();
 
@@ -73,18 +71,30 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
   return (
     <div className="space-y-4">
       {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
-      {deleteMessage ? <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">{deleteMessage}</div> : null}
+      {attemptedConvertedDelete ? <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">This lead has already been converted, so it was not hard-deleted. Use the created deal as the system of record{convertedDeal ? <>: {' '}<Link href={`/deals/${convertedDeal.id}`} className="font-medium underline">open deal ({convertedDeal.current_stage})</Link>.</> : '.'}</div> : null}
       <Card>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{lead.business_name}</h1>
             <p className="text-sm text-muted-foreground">Lead workbench: follow-up, notes, callbacks, and conversion readiness.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {profile.role === 'admin' ? <DeleteHotLeadForm leadId={lead.id} businessName={lead.business_name ?? 'this lead'} /> : null}
             {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
           </div>
         </div>
+        {profile.role === 'admin' ? (
+          <div className="mb-4 rounded-md border border-border bg-muted/20 p-3 text-sm">
+            <p className="font-medium">Admin cleanup</p>
+            {convertedDeal ? (
+              <p className="mt-1 text-muted-foreground">This lead has already been converted. Hard deletion is disabled so the conversion audit trail stays intact. Open the created deal instead: <Link href={`/deals/${convertedDeal.id}`} className="font-medium text-primary underline">open deal ({convertedDeal.current_stage})</Link>.</p>
+            ) : (
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
+                <p className="max-w-2xl text-muted-foreground">Use deletion only for junk or test leads. This removes the lead and its lead activity timeline after confirmation.</p>
+                <DeleteHotLeadForm leadId={lead.id} businessName={lead.business_name ?? 'this lead'} />
+              </div>
+            )}
+          </div>
+        ) : null}
 
         <form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input type="hidden" name="id" value={lead.id} />
