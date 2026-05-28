@@ -8,6 +8,13 @@ type SearchParams = { search?: string; dealId?: string };
 
 const fieldValue = (value: unknown) => value == null ? '' : String(value);
 
+function extractRequestedAmountFromInternalNotes(value?: string | null) {
+  const match = value?.match(/Requested funding amount:\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(amount) ? amount : null;
+}
+
 export default async function AdminFundersPage({ searchParams }: { searchParams?: SearchParams }) {
   await requireRole(['admin']);
   const supabase = await createClient();
@@ -20,7 +27,7 @@ export default async function AdminFundersPage({ searchParams }: { searchParams?
     searchParams?.dealId
       ? supabase
         .from('deals')
-        .select('id,business_name,industry,state,positions,monthly_revenue,time_in_business_months,nsf_count,requested_amount,funded_amount,deposits,fico')
+        .select('id,business_name,industry,state,positions,monthly_revenue,time_in_business_months,nsf_count,internal_notes,funded_amount,deposits,fico')
         .eq('id', searchParams.dealId)
         .limit(1)
       : Promise.resolve({ data: [] })
@@ -34,7 +41,7 @@ export default async function AdminFundersPage({ searchParams }: { searchParams?
     monthlyRevenue: fieldValue(deal.monthly_revenue),
     timeInBusinessMonths: fieldValue(deal.time_in_business_months),
     nsfCount: fieldValue(deal.nsf_count),
-    requestedAmount: fieldValue(deal.requested_amount ?? deal.funded_amount),
+    requestedAmount: fieldValue(extractRequestedAmountFromInternalNotes(deal.internal_notes) ?? deal.funded_amount),
     depositsPerMonth: fieldValue(deal.deposits),
     fico: fieldValue(deal.fico)
   } : DEFAULT_DEAL_INPUTS;
