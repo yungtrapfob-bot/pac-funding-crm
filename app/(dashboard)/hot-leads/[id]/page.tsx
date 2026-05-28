@@ -3,6 +3,7 @@ import { startHotLeadConversion, updateHotLead } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { DeleteHotLeadForm } from '@/components/hot-leads/delete-hot-lead-form';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
@@ -36,7 +37,7 @@ function formatPacificDateTime(value?: string | null) {
   }).format(new Date(value));
 }
 
-export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string } }) {
+export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string; delete?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
   let leadQuery = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)').eq('id', params.id);
@@ -57,6 +58,9 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
     : searchParams?.created === '1'
       ? 'Hot lead created successfully.'
       : null;
+  const deleteMessage = searchParams?.delete === 'converted'
+    ? 'Converted leads are protected from deletion. Open the created deal instead.'
+    : null;
 
   const { data: conversionActivity } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle();
 
@@ -69,13 +73,17 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
   return (
     <div className="space-y-4">
       {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
+      {deleteMessage ? <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-800">{deleteMessage}</div> : null}
       <Card>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{lead.business_name}</h1>
             <p className="text-sm text-muted-foreground">Lead workbench: follow-up, notes, callbacks, and conversion readiness.</p>
           </div>
-          {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
+          <div className="flex flex-wrap items-center gap-2">
+            {profile.role === 'admin' ? <DeleteHotLeadForm leadId={lead.id} businessName={lead.business_name ?? 'this lead'} /> : null}
+            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
+          </div>
         </div>
 
         <form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">

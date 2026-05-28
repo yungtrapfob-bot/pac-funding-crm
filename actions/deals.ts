@@ -141,19 +141,234 @@ export async function updateHotLead(formData: FormData) {
   redirect(`/hot-leads/${p.id}?saved=hot_lead`);
 }
 
-// ... rest unchanged
-export async function convertHotLeadToDeal(formData: FormData) { const supabase = await createClient(); const leadId = String(formData.get('hot_lead_id')); const { data: lead, error } = await supabase.from('hot_leads').select('*').eq('id', leadId).single(); if (error || !lead) throw new Error('Lead not found'); const { data: existingDeal } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle(); if (existingDeal?.deal_id) { redirect(`/deals/${existingDeal.deal_id}`); } const ownerId = resolveHotLeadAssignedRepId(lead) ?? (await resolveProfileIdForUser()); const { data: deal, error: dealErr } = await supabase.from('deals').insert({ business_name: lead.business_name, owner_name: lead.owner_name, phone: lead.phone, email: lead.email, industry: lead.industry, monthly_revenue: lead.monthly_revenue, requested_amount: lead.requested_amount, time_in_business_months: lead.time_in_business_months, state: lead.state, positions: lead.positions, nsf_count: lead.nsf_count, deposits: lead.deposits, fico: lead.fico, notes: lead.notes, assigned_rep_id: ownerId }).select('id').single(); if (dealErr || !deal) throw new Error(dealErr?.message ?? 'Failed to convert lead'); const { data: { user } } = await supabase.auth.getUser(); if (user?.id) { await supabase.from('activities').insert({ hot_lead_id: lead.id, deal_id: deal.id, actor_id: user.id, activity_type: 'hot_lead_converted', details: { source: 'quick_convert' } }); } revalidatePath('/dashboard'); revalidatePath('/hot-leads'); revalidatePath('/deals'); redirect(`/deals/${deal.id}`); }
+function formatRequestedAmountForNotes(value: FormDataEntryValue | number | null | undefined) {
+  const amount = typeof value === 'number' ? value : Number(value ?? 0);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return `Requested funding amount: $${amount.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
+}
+
+function appendNoteLine(existing: FormDataEntryValue | string | null | undefined, line: string | null) {
+  const note = String(existing ?? '').trim();
+  if (!line) return note;
+  return [note, line].filter(Boolean).join('\n');
+}
+
+function getFileEntries(formData: FormData) {
+  const files: Array<{ file: File; type: string }> = [];
+  const applicationFile = formData.get('application_file');
+  if (applicationFile instanceof File && applicationFile.size > 0) files.push({ file: applicationFile, type: 'application' });
+
+  for (const value of formData.getAll('bank_statements')) {
+    if (value instanceof File && value.size > 0) files.push({ file: value, type: 'statement' });
+  }
+
+  return files;
+}
+
+async function uploadDealFiles(supabase: Awaited<ReturnType<typeof createClient>>, dealId: string, files: Array<{ file: File; type: string }>) {
+  for (const [index, entry] of files.entries()) {
+    const safeName = entry.file.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
+    const filePath = `${dealId}/${Date.now()}-${index}-${safeName}`;
+    const { error: uploadError } = await supabase.storage.from('deal-files').upload(filePath, entry.file, { upsert: false });
+    if (uploadError) return `file upload failed: ${uploadError.message}`;
+
+    const { error: insertFileError } = await supabase.from('deal_files').insert({ deal_id: dealId, file_type: entry.type, path: filePath });
+    if (insertFileError) return `file metadata save failed: ${insertFileError.message}`;
+  }
+
+  return null;
+}
+
+export async function convertHotLeadToDeal(formData: FormData) {
+  const supabase = await createClient();
+  const leadId = String(formData.get('hot_lead_id'));
+  const { data: lead, error } = await supabase.from('hot_leads').select('*').eq('id', leadId).single();
+  if (error || !lead) throw new Error('Lead not found');
+
+  const { data: existingDeal } = await supabase
+    .from('activities')
+    .select('deal_id')
+    .eq('hot_lead_id', lead.id)
+    .eq('activity_type', 'hot_lead_converted')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`);
+
+  const ownerId = resolveHotLeadAssignedRepId(lead) ?? (await resolveProfileIdForUser());
+  const requestedAmountNote = formatRequestedAmountForNotes(lead.requested_amount);
+  const { data: deal, error: dealErr } = await supabase
+    .from('deals')
+    .insert({
+      business_name: lead.business_name,
+      owner_name: lead.owner_name,
+      phone: lead.phone,
+      email: lead.email,
+      industry: lead.industry,
+      monthly_revenue: lead.monthly_revenue,
+      time_in_business_months: lead.time_in_business_months,
+      state: lead.state,
+      positions: lead.positions,
+      nsf_count: lead.nsf_count,
+      deposits: lead.deposits,
+      fico: lead.fico,
+      notes: lead.notes,
+      internal_notes: requestedAmountNote,
+      assigned_rep_id: ownerId
+    })
+    .select('id')
+    .single();
+  if (dealErr || !deal) throw new Error(dealErr?.message ?? 'Failed to convert lead');
+
+  const { data: { user } } = await supabase.auth.getUser();
+  if (user?.id) {
+    await supabase.from('activities').insert({
+      hot_lead_id: lead.id,
+      deal_id: deal.id,
+      actor_id: user.id,
+      activity_type: 'hot_lead_converted',
+      details: { source: 'quick_convert', requested_amount: lead.requested_amount ?? null }
+    });
+  }
+
+  revalidatePath('/dashboard');
+  revalidatePath('/hot-leads');
+  revalidatePath('/deals');
+  redirect(`/deals/${deal.id}`);
+}
 
 export type ConvertLeadFormState = {
   status: 'idle' | 'error';
   message?: string;
 };
 
-export async function startHotLeadConversion(formData: FormData) { const leadId = String(formData.get('hot_lead_id') ?? ''); redirect(`/hot-leads/${leadId}/convert`); }
+export async function startHotLeadConversion(formData: FormData) {
+  const leadId = String(formData.get('hot_lead_id') ?? '');
+  redirect(`/hot-leads/${leadId}/convert`);
+}
 
-export async function submitHotLeadConversion(_: ConvertLeadFormState, formData: FormData): Promise<ConvertLeadFormState> { const supabase = await createClient(); const { data: { user } } = await supabase.auth.getUser(); if (!user) return { status: 'error', message: 'Unauthorized. Please sign in again.' }; const leadId = String(formData.get('hot_lead_id') ?? ''); const { data: lead, error: leadError } = await supabase.from('hot_leads').select('id,assigned_rep_id').eq('id', leadId).maybeSingle(); if (leadError || !lead) return { status: 'error', message: 'Hot lead not found or inaccessible.' }; const { data: existingDeal } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle(); if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`); const assignedRepId = resolveHotLeadAssignedRepId(lead) ?? (await resolveProfileIdForUser()); const payload = { business_name: String(formData.get('business_name') ?? ''), owner_name: String(formData.get('owner_name') ?? ''), phone: String(formData.get('phone') ?? ''), email: String(formData.get('email') ?? ''), industry: String(formData.get('industry') ?? ''), monthly_revenue: Number(formData.get('monthly_revenue') ?? 0), requested_amount: Number(formData.get('requested_amount') ?? 0), time_in_business_months: Number(formData.get('time_in_business_months') ?? 0), state: String(formData.get('state') ?? ''), positions: Number(formData.get('positions') ?? 0), nsf_count: Number(formData.get('nsf_count') ?? 0), deposits: Number(formData.get('deposits') ?? 0), fico: Number(formData.get('fico') ?? 0), notes: String(formData.get('notes') ?? ''), internal_notes: String(formData.get('internal_notes') ?? ''), assigned_rep_id: assignedRepId }; const { data: deal, error: dealError } = await supabase.from('deals').insert(payload).select('id').single(); if (dealError || !deal) return { status: 'error', message: dealError?.message ?? 'Unable to create deal from intake.' }; const { error: activityError } = await supabase.from('activities').insert({ hot_lead_id: lead.id, deal_id: deal.id, actor_id: user.id, activity_type: 'hot_lead_converted', details: { source: 'underwriting_intake' } }); if (activityError) return { status: 'error', message: `Deal created, but conversion link could not be recorded: ${activityError.message}` }; const files: Array<{ file: File; type: string }> = []; const applicationFile = formData.get('application_file'); if (applicationFile instanceof File && applicationFile.size > 0) files.push({ file: applicationFile, type: 'application' }); const statementFiles = formData.getAll('bank_statements'); for (const value of statementFiles) { if (value instanceof File && value.size > 0) files.push({ file: value, type: 'statement' }); } for (const entry of files) { const filePath = `${deal.id}/${Date.now()}-${entry.file.name.replace(/\s+/g, '_')}`; const { error: uploadError } = await supabase.storage.from('deal-files').upload(filePath, entry.file, { upsert: false }); if (uploadError) return { status: 'error', message: `Deal created, but file upload failed: ${uploadError.message}` }; const { error: insertFileError } = await supabase.from('deal_files').insert({ deal_id: deal.id, file_type: entry.type, path: filePath }); if (insertFileError) return { status: 'error', message: `Deal created, but file metadata save failed: ${insertFileError.message}` }; } revalidatePath('/dashboard'); revalidatePath('/hot-leads'); revalidatePath('/deals'); revalidatePath(`/deals/${deal.id}`); redirect(`/deals/${deal.id}?converted=1`); }
+export async function submitHotLeadConversion(_: ConvertLeadFormState, formData: FormData): Promise<ConvertLeadFormState> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { status: 'error', message: 'Unauthorized. Please sign in again.' };
 
-export async function createDeal(formData: FormData) { const supabase = await createClient(); const assignedRepId = await resolveProfileIdForUser(); const payload = Object.fromEntries(formData); const { error } = await supabase.from('deals').insert({ business_name: payload.business_name, owner_name: payload.owner_name, phone: payload.phone, email: payload.email, industry: payload.industry, monthly_revenue: Number(payload.monthly_revenue), requested_amount: Number(payload.requested_amount || 0), time_in_business_months: Number(payload.time_in_business_months), state: payload.state, positions: Number(payload.positions), nsf_count: Number(payload.nsf_count), deposits: Number(payload.deposits), fico: Number(payload.fico), notes: payload.notes, internal_notes: payload.internal_notes, assigned_rep_id: assignedRepId }); if (error) throw new Error(error.message); revalidatePath('/deals'); }
+  const leadId = String(formData.get('hot_lead_id') ?? '');
+  const { data: lead, error: leadError } = await supabase.from('hot_leads').select('id,assigned_rep_id').eq('id', leadId).maybeSingle();
+  if (leadError || !lead) return { status: 'error', message: 'Hot lead not found or inaccessible.' };
+
+  const { data: existingDeal } = await supabase
+    .from('activities')
+    .select('deal_id')
+    .eq('hot_lead_id', lead.id)
+    .eq('activity_type', 'hot_lead_converted')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`);
+
+  const assignedRepId = resolveHotLeadAssignedRepId(lead) ?? (await resolveProfileIdForUser());
+  const requestedAmount = Number(formData.get('requested_amount') ?? 0);
+  const requestedAmountNote = formatRequestedAmountForNotes(requestedAmount);
+  const payload = {
+    business_name: String(formData.get('business_name') ?? ''),
+    owner_name: String(formData.get('owner_name') ?? ''),
+    phone: String(formData.get('phone') ?? ''),
+    email: String(formData.get('email') ?? ''),
+    industry: String(formData.get('industry') ?? ''),
+    monthly_revenue: Number(formData.get('monthly_revenue') ?? 0),
+    time_in_business_months: Number(formData.get('time_in_business_months') ?? 0),
+    state: String(formData.get('state') ?? ''),
+    positions: Number(formData.get('positions') ?? 0),
+    nsf_count: Number(formData.get('nsf_count') ?? 0),
+    deposits: Number(formData.get('deposits') ?? 0),
+    fico: Number(formData.get('fico') ?? 0),
+    notes: String(formData.get('notes') ?? ''),
+    internal_notes: appendNoteLine(formData.get('internal_notes'), requestedAmountNote),
+    assigned_rep_id: assignedRepId
+  };
+
+  const { data: deal, error: dealError } = await supabase.from('deals').insert(payload).select('id').single();
+  if (dealError || !deal) return { status: 'error', message: dealError?.message ?? 'Unable to create deal from intake.' };
+
+  const { error: activityError } = await supabase.from('activities').insert({
+    hot_lead_id: lead.id,
+    deal_id: deal.id,
+    actor_id: user.id,
+    activity_type: 'hot_lead_converted',
+    details: { source: 'underwriting_intake', requested_amount: Number.isFinite(requestedAmount) ? requestedAmount : null }
+  });
+  if (activityError) return { status: 'error', message: `Deal created, but conversion link could not be recorded: ${activityError.message}` };
+
+  const uploadError = await uploadDealFiles(supabase, deal.id, getFileEntries(formData));
+  if (uploadError) return { status: 'error', message: `Deal created, but ${uploadError}` };
+
+  revalidatePath('/dashboard');
+  revalidatePath('/hot-leads');
+  revalidatePath('/deals');
+  revalidatePath(`/deals/${deal.id}`);
+  redirect(`/deals/${deal.id}?converted=1`);
+}
+
+export async function createDeal(formData: FormData) {
+  const supabase = await createClient();
+  const assignedRepId = await resolveProfileIdForUser();
+  const payload = Object.fromEntries(formData);
+  const requestedAmountNote = formatRequestedAmountForNotes(payload.requested_amount);
+  const { data: deal, error } = await supabase
+    .from('deals')
+    .insert({
+      business_name: payload.business_name,
+      owner_name: payload.owner_name,
+      phone: payload.phone,
+      email: payload.email,
+      industry: payload.industry,
+      monthly_revenue: Number(payload.monthly_revenue),
+      time_in_business_months: Number(payload.time_in_business_months),
+      state: payload.state,
+      positions: Number(payload.positions),
+      nsf_count: Number(payload.nsf_count),
+      deposits: Number(payload.deposits),
+      fico: Number(payload.fico),
+      notes: payload.notes,
+      internal_notes: appendNoteLine(payload.internal_notes, requestedAmountNote),
+      assigned_rep_id: assignedRepId
+    })
+    .select('id')
+    .single();
+  if (error || !deal) throw new Error(error?.message ?? 'Failed to create deal');
+
+  const uploadError = await uploadDealFiles(supabase, deal.id, getFileEntries(formData));
+  if (uploadError) throw new Error(`Deal created, but ${uploadError}`);
+
+  revalidatePath('/deals');
+  revalidatePath(`/deals/${deal.id}`);
+  redirect(`/deals/${deal.id}`);
+}
+
+export async function deleteHotLead(formData: FormData) {
+  await requireRole(['admin']);
+  const adminSupabase = createAdminClient();
+  const leadId = String(formData.get('hot_lead_id') ?? '');
+  if (!leadId) redirect('/hot-leads?delete=missing');
+
+  const { data: conversionActivity, error: conversionError } = await adminSupabase
+    .from('activities')
+    .select('deal_id')
+    .eq('hot_lead_id', leadId)
+    .eq('activity_type', 'hot_lead_converted')
+    .not('deal_id', 'is', null)
+    .limit(1)
+    .maybeSingle();
+  if (conversionError) throw new Error(conversionError.message);
+  if (conversionActivity?.deal_id) redirect(`/hot-leads/${leadId}?delete=converted`);
+
+  const { error } = await adminSupabase.from('hot_leads').delete().eq('id', leadId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath('/hot-leads');
+  revalidatePath('/dashboard');
+  redirect('/hot-leads?deleted=1');
+}
 
 export async function updateDealDetails(formData: FormData) { await requireRole(['admin']); const supabase = await createClient(); const p = Object.fromEntries(formData); const fundedDate = p.funded_date ? String(p.funded_date) : null; const fundedAmount = Number(p.funded_amount || 0); const grossCommission = Number(p.gross_commission || 0); const updatePayload = { notes: p.notes, internal_notes: p.internal_notes, funded_date: fundedDate, funded_amount: Number.isFinite(fundedAmount) ? fundedAmount : 0, gross_commission: Number.isFinite(grossCommission) ? grossCommission : 0 }; const { error } = await supabase.from('deals').update(updatePayload).eq('id', String(p.deal_id)); if (error) throw new Error(error.message); revalidatePath(`/deals/${p.deal_id}`); revalidatePath('/admin/pipeline'); revalidatePath('/dashboard'); redirect(`/deals/${p.deal_id}?saved=workflow`); }
 

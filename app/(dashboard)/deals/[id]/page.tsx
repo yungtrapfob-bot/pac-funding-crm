@@ -22,6 +22,14 @@ function parseTermPayments(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : null;
 }
 
+
+function extractRequestedAmountFromInternalNotes(value?: string | null) {
+  const match = value?.match(/Requested funding amount:\s*\$?([\d,]+(?:\.\d+)?)/i);
+  if (!match) return null;
+  const amount = Number(match[1].replace(/,/g, ''));
+  return Number.isFinite(amount) ? amount : null;
+}
+
 function formatDisplayDate(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
@@ -85,6 +93,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
         : searchParams?.saved === 'stage' ? 'Stage updated successfully.'
         : null;
   const openedFromProcessing = searchParams?.context === 'processing';
+  const requestedAmount = extractRequestedAmountFromInternalNotes(deal.internal_notes);
   const routingResults = evaluateFunders((funders ?? []) as FunderMasterRecord[], {
     monthlyRevenue: deal.monthly_revenue ?? null,
     timeInBusinessMonths: deal.time_in_business_months ?? null,
@@ -94,7 +103,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     depositsPerMonth: deal.deposits ?? null,
     state: deal.state ?? null,
     industry: deal.industry ?? null,
-    requestedAmount: deal.requested_amount ?? deal.funded_amount ?? null
+    requestedAmount: requestedAmount ?? deal.funded_amount ?? null
   });
 
   return <div className="space-y-4">
@@ -108,7 +117,7 @@ export default async function DealDetailPage({ params, searchParams }: { params:
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
       <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Merchant / Business Info</h2><p>{deal.business_name}</p><p>{deal.industry || '—'} · {deal.state || '—'}</p></Card>
       <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Owner / Contact Info</h2><p>{deal.owner_name}</p><p>{deal.phone}</p><p>{deal.email}</p></Card>
-      <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Financial Snapshot</h2><p>Monthly Revenue: ${Number(deal.monthly_revenue || 0).toLocaleString()}</p><p>Requested: ${Number(deal.requested_amount || 0).toLocaleString()}</p><p>FICO: {deal.fico || '—'} · Positions: {deal.positions || '—'}</p><p>NSF: {deal.nsf_count || 0} · Deposits/Month: {deal.deposits || 0}</p></Card>
+      <Card className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-2 text-lg font-medium">Financial Snapshot</h2><p>Monthly Revenue: ${Number(deal.monthly_revenue || 0).toLocaleString()}</p><p>Requested: {requestedAmount ? `$${requestedAmount.toLocaleString()}` : '—'}</p><p>FICO: {deal.fico || '—'} · Positions: {deal.positions || '—'}</p><p>NSF: {deal.nsf_count || 0} · Deposits/Month: {deal.deposits || 0}</p></Card>
     </div>
 
     <Card><h2 className="mb-2 text-lg font-medium">Stage Movement</h2><form action={updateDealStage} className="flex gap-2"><input type="hidden" name="deal_id" value={deal.id} /><select name="current_stage" defaultValue={toUiPipelineStage(deal.current_stage)} className="rounded-md border px-3 py-2 text-sm">{PIPELINE_STAGES.map((s) => <option key={s} value={s}>{s}</option>)}</select><Button type="submit">Move Stage</Button></form></Card>
