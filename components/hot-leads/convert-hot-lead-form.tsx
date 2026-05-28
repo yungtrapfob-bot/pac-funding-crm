@@ -8,7 +8,7 @@ import { Input } from '@/components/ui/input';
 
 const initialState: ConvertLeadFormState = { status: 'idle' };
 
-type LeadIntake = { id: string; business_name: string | null; owner_name: string | null; phone: string | null; email: string | null; industry: string | null; monthly_revenue: number | null; time_in_business_months: number | null; state: string | null; positions: number | null; nsf_count: number | null; deposits: number | null; fico: number | null; notes: string | null; };
+type LeadIntake = { id: string; business_name: string | null; owner_name: string | null; phone: string | null; email: string | null; industry: string | null; monthly_revenue: number | null; requested_amount: number | null; time_in_business_months: number | null; state: string | null; positions: number | null; nsf_count: number | null; deposits: number | null; fico: number | null; notes: string | null; };
 
 export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
   const [state, formAction] = useFormState(submitHotLeadConversion, initialState);
@@ -40,6 +40,7 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
         <h3 className="text-base font-semibold">Financial Snapshot</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label="Monthly Revenue"><Input name="monthly_revenue" type="number" defaultValue={lead.monthly_revenue ?? 0} required /></Field>
+          <Field label="Funding Amount Requested"><Input name="requested_amount" type="number" defaultValue={lead.requested_amount ?? 0} /></Field>
           <Field label="Positions"><Input name="positions" type="number" defaultValue={lead.positions ?? 0} required /></Field>
           <Field label="NSF Count"><Input name="nsf_count" type="number" defaultValue={lead.nsf_count ?? 0} required /></Field>
           <Field label="Deposits / Month"><Input name="deposits" type="number" defaultValue={lead.deposits ?? 0} required /></Field>

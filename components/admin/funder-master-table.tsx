@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { evaluateFunders, type FunderMasterRecord, type RoutingFit, type SubmissionMethod } from '@/lib/funder-routing';
+import { evaluateFunders, submissionMethodLabel, type FunderMasterRecord, type RoutingFit, type SubmissionMethod } from '@/lib/funder-routing';
 
 type Funder = FunderMasterRecord;
 
@@ -20,7 +20,7 @@ type DealInputState = {
   fico: string;
 };
 
-const DEFAULT_DEAL_INPUTS: DealInputState = {
+export const DEFAULT_DEAL_INPUTS: DealInputState = {
   industry: 'supplements',
   state: 'NJ',
   position: '1',
@@ -58,15 +58,15 @@ const money = (value: number | null) => value == null ? '—' : `$${Number(value
 const plain = (value: string | null) => value && value.trim().length > 0 ? value : '—';
 
 const fitClass: Record<RoutingFit, string> = {
-  YES: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-  MAYBE: 'border-amber-200 bg-amber-50 text-amber-800',
-  NO: 'border-red-200 bg-red-50 text-red-800'
+  YES: 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200',
+  MAYBE: 'border-amber-400/50 bg-amber-500/15 text-amber-200',
+  NO: 'border-red-400/50 bg-red-500/15 text-red-200'
 };
 
 const rowClass: Record<RoutingFit, string> = {
-  YES: 'bg-emerald-50/35',
-  MAYBE: 'bg-amber-50/35',
-  NO: 'bg-red-50/25'
+  YES: 'border-l-4 border-l-emerald-400/80 bg-emerald-950/18 hover:bg-emerald-900/20',
+  MAYBE: 'border-l-4 border-l-amber-400/80 bg-amber-950/18 hover:bg-amber-900/20',
+  NO: 'border-l-4 border-l-red-400/80 bg-red-950/16 hover:bg-red-900/20'
 };
 
 function inputLabel(label: string, children: ReactNode) {
@@ -78,8 +78,10 @@ function inputLabel(label: string, children: ReactNode) {
   );
 }
 
-export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Funder[]; initialSearch?: string }) {
-  const [dealInputs, setDealInputs] = useState(DEFAULT_DEAL_INPUTS);
+export function FunderMasterTable({ funders, initialSearch = '', initialDealInputs = DEFAULT_DEAL_INPUTS, dealContextLabel }: { funders: Funder[]; initialSearch?: string; initialDealInputs?: DealInputState; dealContextLabel?: string }) {
+  const [dealInputs, setDealInputs] = useState(initialDealInputs);
+  const [targetFunders, setTargetFunders] = useState<string[]>([]);
+  const [queuedFunders, setQueuedFunders] = useState<string[]>([]);
   const [search, setSearch] = useState(initialSearch);
   const [fitFilter, setFitFilter] = useState<'all' | RoutingFit>('all');
   const [submissionFilter, setSubmissionFilter] = useState<'all' | SubmissionMethod>('all');
@@ -129,6 +131,8 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
   }), [results]);
 
   const updateInput = (key: keyof DealInputState, value: string) => setDealInputs((current) => ({ ...current, [key]: value }));
+  const toggleTarget = (funderName: string) => setTargetFunders((current) => current.includes(funderName) ? current.filter((name) => name !== funderName) : [...current, funderName]);
+  const toggleQueued = (funderName: string) => setQueuedFunders((current) => current.includes(funderName) ? current.filter((name) => name !== funderName) : [...current, funderName]);
 
   return (
     <div className="space-y-4">
@@ -136,7 +140,7 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold">Deal Router Inputs</h2>
-            <p className="text-sm text-muted-foreground">Enter the deal once; routing updates funder-by-funder below.</p>
+            <p className="text-sm text-muted-foreground">{dealContextLabel ? `Auto-filled from ${dealContextLabel}. Adjust any field before routing.` : 'Enter the deal once; routing updates funder-by-funder below.'}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800">YES {counts.YES}</Badge>
@@ -161,8 +165,8 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
           {inputLabel('Deposits / Month', <Input inputMode="numeric" value={dealInputs.depositsPerMonth} onChange={(e) => updateInput('depositsPerMonth', e.target.value)} placeholder="5" />)}
           {inputLabel('Credit Score (FICO)', <Input inputMode="numeric" value={dealInputs.fico} onChange={(e) => updateInput('fico', e.target.value)} placeholder="650" />)}
           <div className="flex items-end">
-            <button className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-muted" type="button" onClick={() => setDealInputs(DEFAULT_DEAL_INPUTS)}>
-              Reset sample deal
+            <button className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-muted" type="button" onClick={() => setDealInputs(initialDealInputs)}>
+              Reset inputs
             </button>
           </div>
         </div>
@@ -182,7 +186,8 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
             <option value="api">API</option>
             <option value="email">Email</option>
             <option value="portal">Portal</option>
-            <option value="unknown_tbd">Unknown</option>
+            <option value="manual_portal">Manual Portal</option>
+            <option value="tbd">TBD</option>
           </select>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">Showing {filteredResults.length} of {funders.length} funders. Expand any row for full guideline detail.</p>
@@ -190,7 +195,7 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
 
       <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
         <table className="w-full min-w-[1500px] text-sm">
-          <thead className="bg-muted/35 text-left">
+          <thead className="bg-slate-950/80 text-left text-slate-200">
             <tr>
               <th className="p-3">Funder</th>
               <th className="p-3">Fit</th>
@@ -204,6 +209,7 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
               <th className="p-3">Max Funding</th>
               <th className="p-3">Industry YES / MAYBE / NO</th>
               <th className="p-3">Submission</th>
+              <th className="p-3">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -211,9 +217,9 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
               const funder = funderByName.get(result.funderName);
               return (
                 <tr key={result.funderName} className={`border-t border-border/80 align-top ${rowClass[result.fit]}`}>
-                  <td colSpan={12} className="p-0">
+                  <td colSpan={13} className="p-0">
                     <details className="group">
-                      <summary className="grid cursor-pointer grid-cols-[1.2fr_0.6fr_2fr_0.7fr_1fr_1fr_0.8fr_0.7fr_0.7fr_0.8fr_1.4fr_0.8fr] gap-0 p-3 hover:bg-muted/20">
+                      <summary className="grid cursor-pointer grid-cols-[1.2fr_0.6fr_2fr_0.7fr_1fr_1fr_0.8fr_0.7fr_0.7fr_0.8fr_1.4fr_0.8fr_1fr] gap-0 p-3 transition-colors">
                         <span className="font-medium">{result.funderName}</span>
                         <span><Badge className={fitClass[result.fit]}>{result.fit}</Badge></span>
                         <span>{result.summary}</span>
@@ -225,16 +231,20 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
                         <span>{result.minFico ?? '—'}</span>
                         <span>{money(result.maxFunding)}</span>
                         <span>{result.industrySummary}</span>
-                        <span className="uppercase">{result.submissionMethod.replace('_tbd', '')}</span>
+                        <span><Badge className="border-sky-400/40 bg-sky-500/10 text-sky-100">{submissionMethodLabel(result.submissionMethod)}</Badge></span>
+                        <span className="flex flex-wrap gap-1">
+                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${targetFunders.includes(result.funderName) ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100' : 'border-border bg-background/70 text-foreground hover:border-emerald-400/60'}`} onClick={(event) => { event.preventDefault(); toggleTarget(result.funderName); }}>{targetFunders.includes(result.funderName) ? 'Targeted' : 'Mark target'}</button>
+                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${queuedFunders.includes(result.funderName) ? 'border-sky-400 bg-sky-500/20 text-sky-100' : 'border-border bg-background/70 text-foreground hover:border-sky-400/60'}`} onClick={(event) => { event.preventDefault(); toggleQueued(result.funderName); }}>{queuedFunders.includes(result.funderName) ? 'Queued' : 'Queue'}</button>
+                        </span>
                       </summary>
-                      <div className="border-t bg-background/80 p-4">
+                      <div className="border-t border-border/80 bg-background/95 p-4">
                         <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
                           <div>
                             <h4 className="font-semibold">Routing reason detail</h4>
                             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
                               {result.reasons.map((reason, index) => (
                                 <li key={`${reason.message}-${index}`}>
-                                  <span className={reason.status === 'fail' ? 'font-medium text-red-700' : reason.status === 'warn' ? 'font-medium text-amber-700' : reason.status === 'pass' ? 'font-medium text-emerald-700' : 'font-medium'}>
+                                  <span className={reason.status === 'fail' ? 'font-medium text-red-300' : reason.status === 'warn' ? 'font-medium text-amber-300' : reason.status === 'pass' ? 'font-medium text-emerald-300' : 'font-medium'}>
                                     {reason.status.toUpperCase()}:
                                   </span>{' '}{reason.message}
                                 </li>
@@ -244,6 +254,7 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
                           <div>
                             <h4 className="font-semibold">Full guideline detail</h4>
                             <div className="mt-2 flex flex-wrap gap-2">
+                              <Badge>Submission method: {submissionMethodLabel(result.submissionMethod)}</Badge>
                               <Badge>Submission endpoint: {funder?.submission_endpoint || 'Not set'}</Badge>
                               {KEY_MATRIX_FIELDS.map((field) => {
                                 const value = funder?.matrix_row[field];
@@ -252,6 +263,11 @@ export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Fu
                               })}
                             </div>
                           </div>
+                        </div>
+                        <div className="mt-4 grid gap-2 rounded-md border border-border/80 bg-card/70 p-3 text-sm lg:grid-cols-3">
+                          <button type="button" className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 font-medium text-emerald-100 hover:bg-emerald-500/20" onClick={() => toggleTarget(result.funderName)}>{targetFunders.includes(result.funderName) ? 'Target marked' : 'Mark target'}</button>
+                          <button type="button" className="rounded-md border border-sky-400/40 bg-sky-500/10 px-3 py-2 font-medium text-sky-100 hover:bg-sky-500/20" onClick={() => toggleQueued(result.funderName)}>{queuedFunders.includes(result.funderName) ? 'Queued for submission' : 'Queue for submission'}</button>
+                          <a href={`/admin/funders?search=${encodeURIComponent(result.funderName)}`} className="inline-flex items-center justify-center rounded-md border border-border bg-muted px-3 py-2 font-medium text-foreground hover:border-primary/50 hover:bg-card">Open full guidelines</a>
                         </div>
                         <div className="mt-4 grid gap-3 lg:grid-cols-3">
                           <div><h4 className="font-medium">Industry YES</h4><p className="text-sm text-muted-foreground">{funder?.industry_yes || '—'}</p></div>

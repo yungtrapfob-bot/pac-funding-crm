@@ -1,4 +1,5 @@
-export type SubmissionMethod = 'api' | 'email' | 'portal' | 'unknown_tbd';
+export type SubmissionMethod = 'api' | 'email' | 'portal' | 'manual_portal' | 'tbd';
+export type StoredSubmissionMethod = SubmissionMethod | 'unknown_tbd' | string | null | undefined;
 
 type MatrixRow = Record<string, string>;
 
@@ -16,7 +17,7 @@ export type FunderMasterRecord = {
   industry_maybe: string | null;
   industry_no: string | null;
   notes: string | null;
-  submission_method: SubmissionMethod;
+  submission_method: StoredSubmissionMethod;
   submission_endpoint: string | null;
   matrix_row: MatrixRow;
 };
@@ -64,6 +65,36 @@ const toNum = (v: string | null | undefined): number | null => {
 const clean = (value: string | null | undefined) => (value || '').trim().toLowerCase();
 const splitTerms = (v: string | null | undefined) => clean(v).split(/[;,/]/).map((s) => s.replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
 
+export function normalizeSubmissionMethod(value: StoredSubmissionMethod): SubmissionMethod {
+  const method = clean(String(value || '')).replace(/[\s-]+/g, '_');
+  if (method === 'api') return 'api';
+  if (method === 'email') return 'email';
+  if (method === 'portal') return 'portal';
+  if (method === 'manual_portal' || method === 'manual') return 'manual_portal';
+  return 'tbd';
+}
+
+export function submissionMethodLabel(value: StoredSubmissionMethod) {
+  const method = normalizeSubmissionMethod(value);
+  const labels: Record<SubmissionMethod, string> = {
+    api: 'API',
+    email: 'Email',
+    portal: 'Portal',
+    manual_portal: 'Manual Portal',
+    tbd: 'TBD'
+  };
+  return labels[method];
+}
+
+export function inferSubmissionMethodFromText(...values: Array<string | null | undefined>): SubmissionMethod {
+  const text = clean(values.filter(Boolean).join(' '));
+  if (!text) return 'tbd';
+  if (/\bapi\b|webhook|integration/.test(text)) return 'api';
+  if (/\bportal\b|login|upload/.test(text)) return 'portal';
+  if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(text) || /\bemail\b|submissions?@|deals?@/.test(text)) return 'email';
+  return 'tbd';
+}
+
 function normalizedIndustryMatch(industry: string, text: string | null | undefined) {
   const haystack = clean(text);
   if (!industry || !haystack || haystack === 'not specified' || haystack === 'none stated') return false;
@@ -88,8 +119,8 @@ function positionLabel(position: number) {
 }
 
 function positionDecision(dealPosition: number | null, positions: string | null): Reason {
-  if (dealPosition == null) return { status: 'unknown', message: 'Position not entered.' };
-  if (!positions) return { status: 'unknown', message: 'Position guidance unavailable.' };
+  if (dealPosition == null) return { status: 'unknown', message: 'Position not provided.' };
+  if (!positions) return { status: 'unknown', message: 'No position rule stored.' };
 
   const text = clean(positions);
   if (text.includes('any') || text.includes('no max')) return { status: 'pass', message: `Position ${positionLabel(dealPosition)} accepted.` };
@@ -99,42 +130,43 @@ function positionDecision(dealPosition: number | null, positions: string | null)
   if (hasPlus && exactPositions.length > 0) {
     const minPosition = Math.min(...exactPositions);
     return dealPosition >= minPosition
-      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} fits ${positions}.` }
-      : { status: 'fail', message: `Position too early; guide starts at ${positionLabel(minPosition)}.` };
+      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} fits position guide.` }
+      : { status: 'fail', message: `Position ${positionLabel(dealPosition)} too early; starts at ${positionLabel(minPosition)}.` };
   }
 
   if (exactPositions.length > 0) {
     return exactPositions.includes(dealPosition)
-      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} is listed.` }
-      : { status: 'fail', message: `Position ${positionLabel(dealPosition)} is not listed.` };
+      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} listed.` }
+      : { status: 'fail', message: `Position ${positionLabel(dealPosition)} not accepted.` };
   }
 
-  return { status: 'unknown', message: 'Position guidance ambiguous; manual review.' };
+  return { status: 'unknown', message: 'Position rule needs review.' };
 }
 
 function stateDecision(dealState: string | null, states: string | null): Reason {
   const st = clean(dealState).toUpperCase();
-  if (!st || !states) return { status: 'unknown', message: 'State comparison unavailable.' };
+  if (!st) return { status: 'unknown', message: 'State not provided.' };
+  if (!states) return { status: 'unknown', message: 'No state rule stored.' };
   const s = clean(states);
-  if (s.includes('all 50') || s.includes('all states') || s.includes('not specified')) return { status: 'pass', message: `State allowed (${st}).` };
+  if (s.includes('all 50') || s.includes('all states') || s.includes('not specified')) return { status: 'pass', message: `State ${st} allowed.` };
   if (s.includes('except')) {
     const blocked = (s.split('except')[1] || '').toUpperCase();
-    if (blocked.split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State restricted (${st}).` };
-    return { status: 'pass', message: `State appears allowed (${st}).` };
+    if (blocked.split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State ${st} restricted.` };
+    return { status: 'pass', message: `State ${st} not excluded.` };
   }
-  if (s.includes('restricted') && s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State restricted (${st}).` };
-  if (s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'pass', message: `State listed (${st}).` };
-  return { status: 'warn', message: `State rule ambiguous for ${st}; manual review.` };
+  if (s.includes('restricted') && s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State ${st} restricted.` };
+  if (s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'pass', message: `State ${st} listed.` };
+  return { status: 'warn', message: `State ${st} needs manual review.` };
 }
 
 function conciseReason(reasons: Reason[]) {
   const hardFails = reasons.filter((r) => r.status === 'fail').map((r) => r.message);
-  if (hardFails.length > 0) return hardFails.slice(0, 2).join(' ');
+  if (hardFails.length > 0) return `Decline: ${hardFails.slice(0, 2).join(' ')}`;
   const warnings = reasons.filter((r) => r.status === 'warn').map((r) => r.message);
-  if (warnings.length > 0) return warnings.slice(0, 2).join(' ');
+  if (warnings.length > 0) return `Review: ${warnings.slice(0, 2).join(' ')}`;
   const unknowns = reasons.filter((r) => r.status === 'unknown').map((r) => r.message);
-  if (unknowns.length > 0) return `Eligible on known hard checks; ${unknowns.slice(0, 2).join(' ')}`;
-  return 'All entered deal fields pass matrix guidelines.';
+  if (unknowns.length > 0) return `Submit if docs confirm: ${unknowns.slice(0, 2).join(' ')}`;
+  return 'Submit: entered fields clear stored guidelines.';
 }
 
 function industrySummary(f: FunderMasterRecord) {
@@ -153,45 +185,45 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
 
     if (deal.monthlyRevenue != null && revenueMinimum != null) {
       reasons.push(deal.monthlyRevenue >= revenueMinimum
-        ? { status: 'pass', message: `Revenue passes min ($${revenueMinimum.toLocaleString()}).` }
-        : { status: 'fail', message: `Revenue below min ($${revenueMinimum.toLocaleString()}).` });
-    } else reasons.push({ status: 'unknown', message: 'Revenue rule unavailable.' });
+        ? { status: 'pass', message: `Revenue clears $${revenueMinimum.toLocaleString()} min.` }
+        : { status: 'fail', message: `Revenue below $${revenueMinimum.toLocaleString()} min.` });
+    } else reasons.push({ status: 'unknown', message: 'Revenue check unavailable.' });
 
     if (deal.timeInBusinessMonths != null && f.min_time_in_business_months != null) {
       reasons.push(deal.timeInBusinessMonths >= f.min_time_in_business_months
-        ? { status: 'pass', message: `TIB passes min (${f.min_time_in_business_months} mo).` }
-        : { status: 'fail', message: `TIB below min (${f.min_time_in_business_months} mo).` });
-    } else reasons.push({ status: 'unknown', message: 'Time-in-business rule unavailable.' });
+        ? { status: 'pass', message: `TIB clears ${f.min_time_in_business_months} mo min.` }
+        : { status: 'fail', message: `TIB below ${f.min_time_in_business_months} mo min.` });
+    } else reasons.push({ status: 'unknown', message: 'TIB check unavailable.' });
 
     if (deal.fico != null && f.min_fico != null && f.min_fico > 0) {
       reasons.push(deal.fico >= f.min_fico
-        ? { status: 'pass', message: `FICO passes min (${f.min_fico}).` }
-        : { status: 'fail', message: `FICO below min (${f.min_fico}).` });
-    } else reasons.push({ status: 'unknown', message: 'FICO rule unavailable or no minimum.' });
+        ? { status: 'pass', message: `FICO clears ${f.min_fico} min.` }
+        : { status: 'fail', message: `FICO below ${f.min_fico} min.` });
+    } else reasons.push({ status: 'unknown', message: 'FICO check unavailable.' });
 
     const maxNsf = toNum(f.matrix_row['Max NSFs/Neg Days']);
     if (deal.nsfCount != null && maxNsf != null) {
-      reasons.push(deal.nsfCount <= maxNsf ? { status: 'pass', message: `NSFs/neg days within max (${maxNsf}).` } : { status: 'fail', message: `NSFs/neg days above max (${maxNsf}).` });
-    } else reasons.push({ status: 'unknown', message: 'NSF/negative-day guideline not explicit.' });
+      reasons.push(deal.nsfCount <= maxNsf ? { status: 'pass', message: `NSFs within ${maxNsf} max.` } : { status: 'fail', message: `NSFs exceed ${maxNsf} max.` });
+    } else reasons.push({ status: 'unknown', message: 'NSF guideline not explicit.' });
 
     const minDeposits = toNum(f.matrix_row['Min Deposits/Month']);
     if (deal.depositsPerMonth != null && minDeposits != null) {
-      reasons.push(deal.depositsPerMonth >= minDeposits ? { status: 'pass', message: `Deposits pass min/month (${minDeposits}).` } : { status: 'fail', message: `Deposits below min/month (${minDeposits}).` });
-    } else reasons.push({ status: 'unknown', message: 'Deposit/month rule unavailable.' });
+      reasons.push(deal.depositsPerMonth >= minDeposits ? { status: 'pass', message: `Deposits clear ${minDeposits}/mo min.` } : { status: 'fail', message: `Deposits below ${minDeposits}/mo min.` });
+    } else reasons.push({ status: 'unknown', message: 'Deposit check unavailable.' });
 
     reasons.push(positionDecision(deal.positions, f.positions));
     reasons.push(stateDecision(deal.state, f.states));
 
     if (deal.industry) {
-      if (normalizedIndustryMatch(deal.industry, f.industry_no)) reasons.push({ status: 'fail', message: 'Industry appears prohibited by matrix.' });
-      else if (normalizedIndustryMatch(deal.industry, f.industry_yes)) reasons.push({ status: 'pass', message: 'Industry appears preferred/allowed.' });
-      else if (normalizedIndustryMatch(deal.industry, f.industry_maybe)) reasons.push({ status: 'warn', message: 'Industry is conditional; manual review thresholds apply.' });
-      else reasons.push({ status: 'warn', message: 'No explicit industry match; manual review.' });
-    } else reasons.push({ status: 'unknown', message: 'Industry not entered.' });
+      if (normalizedIndustryMatch(deal.industry, f.industry_no)) reasons.push({ status: 'fail', message: 'Industry is prohibited.' });
+      else if (normalizedIndustryMatch(deal.industry, f.industry_yes)) reasons.push({ status: 'pass', message: 'Industry accepted.' });
+      else if (normalizedIndustryMatch(deal.industry, f.industry_maybe)) reasons.push({ status: 'warn', message: 'Industry is conditional.' });
+      else reasons.push({ status: 'warn', message: 'Industry not explicitly listed.' });
+    } else reasons.push({ status: 'unknown', message: 'Industry not provided.' });
 
     if (deal.requestedAmount != null && f.max_funding != null) {
-      reasons.push(deal.requestedAmount <= f.max_funding ? { status: 'pass', message: `Requested amount within max funding ($${f.max_funding.toLocaleString()}).` } : { status: 'fail', message: `Requested amount above max funding ($${f.max_funding.toLocaleString()}).` });
-    } else reasons.push({ status: 'unknown', message: 'Requested amount/max funding check unavailable.' });
+      reasons.push(deal.requestedAmount <= f.max_funding ? { status: 'pass', message: `Request within $${f.max_funding.toLocaleString()} max.` } : { status: 'fail', message: `Request above $${f.max_funding.toLocaleString()} max.` });
+    } else reasons.push({ status: 'unknown', message: 'Funding cap check unavailable.' });
 
     const fails = reasons.filter((r) => r.status === 'fail').length;
     const warns = reasons.filter((r) => r.status === 'warn').length;
@@ -209,7 +241,7 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
       reasons,
       score,
       scoreLabel: `${passes}/${knownChecks} checks`,
-      submissionMethod: f.submission_method,
+      submissionMethod: normalizeSubmissionMethod(f.submission_method),
       positions: f.positions,
       states: f.states,
       maxFunding: f.max_funding,
