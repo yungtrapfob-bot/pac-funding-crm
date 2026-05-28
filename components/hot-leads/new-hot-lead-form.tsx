@@ -29,7 +29,6 @@ export function NewHotLeadForm() {
       <div><Input type="email" name="email" placeholder="Email" required /><ErrorText message={state.fieldErrors?.email} /></div>
       <div><Input name="industry" placeholder="Industry" /><ErrorText message={state.fieldErrors?.industry} /></div>
       <div><Input type="number" name="monthly_revenue" placeholder="Monthly revenue" min={0} /><ErrorText message={state.fieldErrors?.monthly_revenue} /></div>
-      <div><Input type="number" name="requested_amount" placeholder="Funding amount requested" min={0} /><ErrorText message={state.fieldErrors?.requested_amount} /></div>
       <div><Input type="number" name="time_in_business_months" placeholder="Time in business (months)" min={0} /><ErrorText message={state.fieldErrors?.time_in_business_months} /></div>
       <div><Input name="state" placeholder="State" /><ErrorText message={state.fieldErrors?.state} /></div>
       <div><Input type="number" name="positions" placeholder="Positions" min={0} /><ErrorText message={state.fieldErrors?.positions} /></div>

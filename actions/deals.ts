@@ -18,7 +18,6 @@ const hotLeadSchema = z.object({
   email: z.string().email(),
   industry: z.string().optional().default(''),
   monthly_revenue: z.coerce.number().nonnegative().optional().default(0),
-  requested_amount: z.coerce.number().nonnegative().optional().default(0),
   time_in_business_months: z.coerce.number().nonnegative().optional().default(0),
   state: z.string().optional().default(''),
   positions: z.coerce.number().nonnegative().optional().default(0),
