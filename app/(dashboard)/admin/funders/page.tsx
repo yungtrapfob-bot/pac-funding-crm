@@ -51,9 +51,9 @@ export default async function AdminFundersPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Funder Master Foundation</h1>
+        <h1 className="text-2xl font-semibold">Funder Guidelines Library</h1>
         <p className="text-sm text-muted-foreground">
-          Imported lender guidelines from matrix.csv with router inputs and legend interpretation for future recommendation/routing logic.
+          Admin reference for funder guidelines and matrix details. Use the Deal Router from each deal file in processing workflow for YES / MAYBE / NO routing decisions.
         </p>
       </div>
       <Card className="p-4">
@@ -75,6 +75,13 @@ export default async function AdminFundersPage() {
               <span className="font-medium text-foreground">{rule.legend_key}:</span> {rule.meaning}
             </li>
           ))}
+        </ul>
+      </Card>
+      <Card className="p-4">
+        <h2 className="text-lg font-semibold">Operational Split</h2>
+        <ul className="mt-2 list-disc pl-6 text-sm text-muted-foreground">
+          <li><span className="font-medium text-foreground">Guidelines Library (this page):</span> browse funders, restrictions, and matrix guideline detail.</li>
+          <li><span className="font-medium text-foreground">Deal Router / Match Engine:</span> open a specific deal file to view Recommended / Possible / Declined routing with per-funder reasoning.</li>
         </ul>
       </Card>
       <FunderMasterTable funders={effectiveFunders} />

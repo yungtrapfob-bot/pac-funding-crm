@@ -27,12 +27,30 @@ export function DealRoutingPanel({ results }: { results: RoutingResult[] }) {
   const declined = results.filter((r) => r.result === 'declined');
 
   return <Card>
-    <h2 className="mb-2 text-lg font-medium">Deal Routing Recommendations</h2>
-    <p className="mb-3 text-sm text-muted-foreground">Spreadsheet-derived checks are applied per funder and grouped for processing decisions. Conditional/ambiguous matrix rules are marked manual review.</p>
+    <h2 className="mb-2 text-lg font-medium">Deal Router / Match Engine</h2>
+    <p className="mb-3 text-sm text-muted-foreground">For this deal, funders are grouped into who to send first, who needs manual review, and who is not a fit, with explicit reason checks per funder.</p>
     <div className="grid gap-4 lg:grid-cols-3">
       <Section title="Recommended" items={recommended} />
       <Section title="Possible / Manual Review" items={possible} />
       <Section title="Declined / Not a Fit" items={declined} />
+    </div>
+    <div className="mt-4 grid gap-3 border-t pt-4 text-sm md:grid-cols-2 xl:grid-cols-4">
+      <div className="rounded-md border border-dashed p-3">
+        <p className="font-medium">Target Funder</p>
+        <p className="mt-1 text-muted-foreground">Reserved for marking a result as top submission target.</p>
+      </div>
+      <div className="rounded-md border border-dashed p-3">
+        <p className="font-medium">Queue for Submission</p>
+        <p className="mt-1 text-muted-foreground">Reserved for adding selected funders to an internal send queue.</p>
+      </div>
+      <div className="rounded-md border border-dashed p-3">
+        <p className="font-medium">Submission Method</p>
+        <p className="mt-1 text-muted-foreground">Reserved for selecting API / email / portal mode.</p>
+      </div>
+      <div className="rounded-md border border-dashed p-3">
+        <p className="font-medium">Open Guidelines</p>
+        <p className="mt-1 text-muted-foreground">Reserved for launching full funder guideline reference from a result.</p>
+      </div>
     </div>
   </Card>;
 }
