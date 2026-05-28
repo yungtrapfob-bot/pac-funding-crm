@@ -41,8 +41,8 @@ const KEY_MATRIX_FIELDS = [
   'Early Payoff'
 ] as const;
 
-export function FunderMasterTable({ funders }: { funders: Funder[] }) {
-  const [search, setSearch] = useState('');
+export function FunderMasterTable({ funders, initialSearch = '' }: { funders: Funder[]; initialSearch?: string }) {
+  const [search, setSearch] = useState(initialSearch);
   const [submissionFilter, setSubmissionFilter] = useState<'all' | SubmissionMethod>('all');
   const [positionFilter, setPositionFilter] = useState('all');
   const [industryModeFilter, setIndustryModeFilter] = useState<'all' | 'has_yes' | 'has_maybe' | 'has_no'>('all');

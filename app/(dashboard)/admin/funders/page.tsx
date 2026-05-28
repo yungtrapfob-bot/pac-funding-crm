@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card';
 import { FunderMasterTable } from '@/components/admin/funder-master-table';
 import { loadNormalizedFunderImport } from '@/lib/funder-master-import';
 
-export default async function AdminFundersPage() {
+export default async function AdminFundersPage({ searchParams }: { searchParams?: { search?: string } }) {
   await requireRole(['admin']);
   const supabase = await createClient();
   const [{ data: funders }, { data: routingInputs }, { data: legendRules }, fallbackImport] = await Promise.all([
@@ -84,7 +84,7 @@ export default async function AdminFundersPage() {
           <li><span className="font-medium text-foreground">Deal Router / Match Engine:</span> open a specific deal file to view Recommended / Possible / Declined routing with per-funder reasoning.</li>
         </ul>
       </Card>
-      <FunderMasterTable funders={effectiveFunders} />
+      <FunderMasterTable funders={effectiveFunders} initialSearch={searchParams?.search || ""} />
     </div>
   );
 }
