@@ -56,14 +56,59 @@ export type RoutingResult = {
   industrySummary: string;
 };
 
-const toNum = (v: string | null | undefined): number | null => {
-  if (!v) return null;
-  const m = v.replace(/,/g, '').match(/\d+(\.\d+)?/);
-  return m ? Number(m[0]) : null;
+const clean = (value: string | null | undefined) => (value || '').trim().toLowerCase();
+
+const isBlankRule = (value: string | null | undefined) => {
+  const text = clean(value);
+  return !text || ['not specified', 'none stated', 'none', 'unknown', 'n/a', 'na'].includes(text);
 };
 
-const clean = (value: string | null | undefined) => (value || '').trim().toLowerCase();
-const splitTerms = (v: string | null | undefined) => clean(v).split(/[;,/]/).map((s) => s.replace(/\([^)]*\)/g, '').trim()).filter(Boolean);
+const extractNumbers = (value: string | null | undefined): number[] => {
+  if (!value) return [];
+  const matches = Array.from(value.replace(/,/g, '').matchAll(/\$?\s*(\d+(?:\.\d+)?)\s*([kKmM])?/g));
+  return matches.map((match) => {
+    const base = Number(match[1]);
+    const suffix = (match[2] || '').toLowerCase();
+    if (suffix === 'k') return base * 1000;
+    if (suffix === 'm') return base * 1000000;
+    return base;
+  }).filter((number) => Number.isFinite(number));
+};
+
+const minNumber = (v: string | null | undefined): number | null => extractNumbers(v)[0] ?? null;
+const maxNumber = (v: string | null | undefined): number | null => {
+  const numbers = extractNumbers(v);
+  return numbers.length > 0 ? Math.max(...numbers) : null;
+};
+
+const splitTerms = (v: string | null | undefined) => clean(v)
+  .split(/[;,]/)
+  .map((s) => s.replace(/^preferred:\s*/i, '').replace(/^do not fund:\s*/i, '').trim())
+  .filter(Boolean);
+
+const INDUSTRY_ALIASES: Record<string, string[]> = {
+  restaurant: ['restaurant', 'restaurants', 'restaurant & bars', 'food & beverage', 'hospitality'],
+  restaurants: ['restaurant', 'restaurants', 'restaurant & bars', 'food & beverage', 'hospitality'],
+  trucking: ['trucking', 'transportation', 'logistics', 'trucking & transportation'],
+  construction: ['construction', 'general construction', 'contracting', 'contractor', 'specialty construction'],
+  retail: ['retail', 'retail/wholesale', 'retail businesses', 'brick & mortar'],
+  healthcare: ['healthcare', 'health care', 'medical', 'medical offices', 'health services'],
+  medical: ['medical', 'medical offices', 'healthcare', 'health care', 'health services'],
+  'auto repair': ['auto repair', 'automotive repair'],
+  'auto sales': ['auto sales', 'auto dealers', 'automotive sales', 'motor vehicle sales', 'dealership']
+};
+
+function industryNeedles(industry: string) {
+  const normalized = clean(industry);
+  const aliases = INDUSTRY_ALIASES[normalized] || [];
+  return Array.from(new Set([normalized, ...aliases].filter(Boolean)));
+}
+
+function textMentionsIndustry(industry: string, text: string | null | undefined) {
+  const haystack = clean(text);
+  if (!industry || !haystack) return false;
+  return industryNeedles(industry).some((needle) => haystack.includes(needle) || needle.includes(haystack));
+}
 
 export function normalizeSubmissionMethod(value: StoredSubmissionMethod): SubmissionMethod {
   const method = clean(String(value || '')).replace(/[\s-]+/g, '_');
@@ -97,66 +142,202 @@ export function inferSubmissionMethodFromText(...values: Array<string | null | u
 
 function normalizedIndustryMatch(industry: string, text: string | null | undefined) {
   const haystack = clean(text);
-  if (!industry || !haystack || haystack === 'not specified' || haystack === 'none stated') return false;
-  if (haystack.includes('all industries')) return true;
-  const needle = clean(industry);
-  return splitTerms(text).some((term) => term && (needle.includes(term) || term.includes(needle)));
+  if (!industry || isBlankRule(text)) return false;
+  if (haystack.includes('all industries') || haystack.includes('no industry restrictions') || haystack.includes('minimal industry restrictions')) return true;
+  return splitTerms(text).some((term) => textMentionsIndustry(industry, term));
+}
+
+function matchingConditionalClause(industry: string, text: string | null | undefined) {
+  if (!industry || isBlankRule(text)) return null;
+  return splitTerms(text).find((term) => textMentionsIndustry(industry, term)) || null;
 }
 
 function getIndustryMinimum(f: FunderMasterRecord, industry: string | null) {
   const baseMinimum = f.min_monthly_revenue;
   if (!industry) return baseMinimum;
-  const industryText = clean(industry);
-  const truckingConstructionMinimum = toNum(f.matrix_row['Min Monthly Rev (Trucking/Construction)']);
-  const isTruckingConstruction = industryText.includes('trucking') || industryText.includes('construction');
-  if (isTruckingConstruction && truckingConstructionMinimum != null) return Math.max(baseMinimum ?? 0, truckingConstructionMinimum);
-  return baseMinimum;
+
+  const conditionalClause = matchingConditionalClause(industry, f.industry_maybe);
+  const conditionalRevenue = extractRevenueMinimum(conditionalClause);
+  const truckingConstructionMinimum = minNumber(f.matrix_row['Min Monthly Rev (Trucking/Construction)']);
+  const isTruckingConstruction = textMentionsIndustry('trucking', industry) || textMentionsIndustry('construction', industry);
+
+  return [baseMinimum, conditionalRevenue, isTruckingConstruction ? truckingConstructionMinimum : null]
+    .filter((value): value is number => value != null)
+    .reduce<number | null>((highest, value) => highest == null ? value : Math.max(highest, value), null);
 }
+
+function extractRevenueMinimum(text: string | null | undefined) {
+  const value = clean(text);
+  if (!value || !/(rev|revenue|avg monthly|monthly|mo)/.test(value)) return null;
+  return maxNumber(text);
+}
+
+function extractMonthsMinimum(text: string | null | undefined) {
+  const value = clean(text);
+  if (!value || !/(tib|time in biz|years?|yrs?|months?|mos?)/.test(value)) return null;
+  const yearMatch = value.match(/(\d+(?:\.\d+)?)\s*(?:yrs?|years?)/);
+  if (yearMatch) return Math.round(Number(yearMatch[1]) * 12);
+  const monthMatch = value.match(/(\d+(?:\.\d+)?)\s*(?:months?|mos?)/);
+  if (monthMatch) return Math.round(Number(monthMatch[1]));
+  return null;
+}
+
 
 function positionLabel(position: number) {
   const suffix = position === 1 ? 'st' : position === 2 ? 'nd' : position === 3 ? 'rd' : 'th';
   return `${position}${suffix}`;
 }
 
+function extractPositionNumbers(text: string | null | undefined) {
+  if (!text) return [];
+  const positions = new Set<number>();
+  const normalized = clean(text);
+  for (const match of normalized.matchAll(/(\d+)(?:st|nd|rd|th)?\s*-\s*(\d+)(?:st|nd|rd|th)?/g)) {
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    for (let position = Math.min(start, end); position <= Math.max(start, end); position += 1) positions.add(position);
+  }
+  for (const match of normalized.matchAll(/(\d+)(?:st|nd|rd|th)?/g)) positions.add(Number(match[1]));
+  return Array.from(positions).filter((position) => Number.isFinite(position));
+}
+
 function positionDecision(dealPosition: number | null, positions: string | null): Reason {
   if (dealPosition == null) return { status: 'unknown', message: 'Position not provided.' };
-  if (!positions) return { status: 'unknown', message: 'No position rule stored.' };
+  if (isBlankRule(positions)) return { status: 'unknown', message: 'No position rule stored.' };
 
   const text = clean(positions);
   if (text.includes('any') || text.includes('no max')) return { status: 'pass', message: `Position ${positionLabel(dealPosition)} accepted.` };
 
-  const exactPositions = Array.from(text.matchAll(/(\d+)(?:st|nd|rd|th)?/g)).map((match) => Number(match[1]));
-  const hasPlus = /\d+\s*\+/.test(text) || text.includes('plus');
+  const exactPositions = extractPositionNumbers(positions);
+  const hasPlus = /\d+\s*\+|\b\d+\+|plus/.test(text);
   if (hasPlus && exactPositions.length > 0) {
     const minPosition = Math.min(...exactPositions);
     return dealPosition >= minPosition
-      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} fits position guide.` }
+      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} fits ${positionLabel(minPosition)}+ guide.` }
       : { status: 'fail', message: `Position ${positionLabel(dealPosition)} too early; starts at ${positionLabel(minPosition)}.` };
   }
 
-  if (exactPositions.length > 0) {
-    return exactPositions.includes(dealPosition)
-      ? { status: 'pass', message: `Position ${positionLabel(dealPosition)} listed.` }
-      : { status: 'fail', message: `Position ${positionLabel(dealPosition)} not accepted.` };
+  if (exactPositions.includes(dealPosition)) {
+    if (/case-by-case|case by case|c\/b|review/.test(text) && text.includes(positionLabel(dealPosition))) {
+      return { status: 'warn', message: `Position ${positionLabel(dealPosition)} is case-by-case.` };
+    }
+    return { status: 'pass', message: `Position ${positionLabel(dealPosition)} listed.` };
   }
 
-  return { status: 'unknown', message: 'Position rule needs review.' };
+  return exactPositions.length > 0
+    ? { status: 'fail', message: `Position ${positionLabel(dealPosition)} not accepted.` }
+    : { status: 'unknown', message: 'Position rule needs review.' };
+}
+
+function stateTokens(text: string) {
+  return text.toUpperCase().split(/[^A-Z]/).filter((token) => token.length === 2);
 }
 
 function stateDecision(dealState: string | null, states: string | null): Reason {
   const st = clean(dealState).toUpperCase();
   if (!st) return { status: 'unknown', message: 'State not provided.' };
-  if (!states) return { status: 'unknown', message: 'No state rule stored.' };
+  if (isBlankRule(states)) return { status: 'pass', message: `State ${st} has no matrix restriction.` };
+
   const s = clean(states);
-  if (s.includes('all 50') || s.includes('all states') || s.includes('not specified')) return { status: 'pass', message: `State ${st} allowed.` };
-  if (s.includes('except')) {
-    const blocked = (s.split('except')[1] || '').toUpperCase();
-    if (blocked.split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State ${st} restricted.` };
-    return { status: 'pass', message: `State ${st} not excluded.` };
+  const tokens = stateTokens(states || '');
+  const hasState = tokens.includes(st);
+  if (s.includes('all 50') || s.includes('all states') || s.includes('all 50 states')) {
+    if (/except|not available|restricted/.test(s) && hasState) return { status: 'warn', message: `State ${st} has product/state nuance.` };
+    return { status: 'pass', message: `State ${st} allowed.` };
   }
-  if (s.includes('restricted') && s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'fail', message: `State ${st} restricted.` };
-  if (s.toUpperCase().split(/[^A-Z]/).includes(st)) return { status: 'pass', message: `State ${st} listed.` };
+  if (s.includes('except') || s.includes('restricted') || s.includes('not available')) {
+    return hasState
+      ? { status: 'fail', message: `State ${st} restricted.` }
+      : { status: 'pass', message: `State ${st} not restricted.` };
+  }
+  if (hasState) return { status: 'pass', message: `State ${st} listed.` };
   return { status: 'warn', message: `State ${st} needs manual review.` };
+}
+
+function numericDecision(label: string, dealValue: number | null, ruleValue: number | null, passMessage: (value: number) => string, failMessage: (value: number) => string, noRuleMessage: string, compare: (deal: number, rule: number) => boolean): Reason {
+  if (dealValue == null) return { status: 'unknown', message: `${label} not provided.` };
+  if (ruleValue == null) return { status: 'pass', message: noRuleMessage };
+  return compare(dealValue, ruleValue)
+    ? { status: 'pass', message: passMessage(ruleValue) }
+    : { status: 'fail', message: failMessage(ruleValue) };
+}
+
+function maxNsfRule(value: string | null | undefined) {
+  const text = clean(value);
+  if (isBlankRule(value) || text.includes('unknown')) return null;
+  if (text.includes('no minimum')) return null;
+  const smallNumbers = extractNumbers(value).filter((number) => number >= 0 && number <= 31);
+  if (smallNumbers.length === 0) return null;
+  if (/</.test(text)) return Math.max(...smallNumbers.map((number) => Math.max(0, number - 1)));
+  return Math.max(...smallNumbers);
+}
+
+function minDepositRule(value: string | null | undefined, industry: string | null) {
+  const text = clean(value);
+  if (text.includes('no minimum')) return 0;
+  if (isBlankRule(value) || text.includes('unknown')) return null;
+  const constructionMatch = text.match(/(\d+)\s*(?:for|construction)/);
+  if (industry && textMentionsIndustry('construction', industry) && constructionMatch) return Number(constructionMatch[1]);
+  return minNumber(value);
+}
+
+function ficoRule(f: FunderMasterRecord, industry: string | null, position: number | null) {
+  const raw = f.matrix_row['Min FICO'];
+  const text = clean(raw);
+  if (text.includes('no minimum') || text.includes('no fico') || text.includes('no credit score')) return null;
+  if (industry && textMentionsIndustry('construction', industry) && position === 2 && text.includes('construction 2nd')) return 650;
+  if (industry && textMentionsIndustry('construction', industry) && position === 1 && text.includes('construction 1st')) return 600;
+  if (industry && textMentionsIndustry('trucking', industry) && text.includes('trucking')) return 620;
+  return f.min_fico && f.min_fico > 0 ? f.min_fico : minNumber(raw);
+}
+
+function timeInBusinessRule(f: FunderMasterRecord, industry: string | null) {
+  const raw = f.matrix_row['Min Time in Biz (Months)'];
+  const conditional = industry ? matchingConditionalClause(industry, f.industry_maybe) : null;
+  const conditionalMonths = extractMonthsMinimum(conditional);
+  const base = f.min_time_in_business_months ?? extractMonthsMinimum(raw) ?? minNumber(raw);
+  if (conditionalMonths != null && base != null) return Math.max(base, conditionalMonths);
+  return conditionalMonths ?? base;
+}
+
+function maxFundingRule(f: FunderMasterRecord, position: number | null) {
+  const raw = f.matrix_row['Max Funding'];
+  const text = clean(raw);
+  if (position != null) {
+    const escapedPosition = positionLabel(position).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = text.match(new RegExp(`${escapedPosition}[^$\\d]*(?:\\$?\\s*)?(\\d+(?:\\.\\d+)?)([km])?`));
+    if (match) {
+      const suffix = match[2] || '';
+      const amount = Number(match[1]) * (suffix === 'k' ? 1000 : suffix === 'm' ? 1000000 : 1);
+      if (Number.isFinite(amount)) return amount;
+    }
+  }
+  return f.max_funding ?? maxNumber(raw);
+}
+
+function industryDecision(f: FunderMasterRecord, deal: DealRoutingInput): Reason {
+  if (!deal.industry) return { status: 'unknown', message: 'Industry not provided.' };
+  if (normalizedIndustryMatch(deal.industry, f.industry_no)) return { status: 'fail', message: 'Industry is prohibited by matrix.' };
+
+  const conditionalClause = matchingConditionalClause(deal.industry, f.industry_maybe);
+  if (conditionalClause) {
+    const checks: Reason[] = [];
+    const revenueMinimum = extractRevenueMinimum(conditionalClause);
+    const tibMinimum = extractMonthsMinimum(conditionalClause);
+    if (revenueMinimum != null) checks.push(numericDecision('Revenue', deal.monthlyRevenue, revenueMinimum, (value) => `conditional revenue clears $${value.toLocaleString()}`, (value) => `conditional revenue below $${value.toLocaleString()}`, 'conditional revenue not specified', (dealValue, ruleValue) => dealValue >= ruleValue));
+    if (tibMinimum != null) checks.push(numericDecision('TIB', deal.timeInBusinessMonths, tibMinimum, (value) => `conditional TIB clears ${value} mo`, (value) => `conditional TIB below ${value} mo`, 'conditional TIB not specified', (dealValue, ruleValue) => dealValue >= ruleValue));
+
+    const fail = checks.find((check) => check.status === 'fail' || check.status === 'unknown');
+    if (fail) return { status: fail.status, message: `Industry conditional: ${fail.message}.` };
+    if (checks.length > 0) return { status: 'pass', message: `Industry conditional met (${conditionalClause}).` };
+    return { status: 'warn', message: `Industry conditional/manual review: ${conditionalClause}.` };
+  }
+
+  if (normalizedIndustryMatch(deal.industry, f.industry_yes)) return { status: 'pass', message: 'Industry accepted by matrix.' };
+  if (isBlankRule(f.industry_yes) || clean(f.industry_yes).includes('minimal industry restrictions') || clean(f.industry_yes).includes('general industries')) {
+    return { status: 'pass', message: 'Industry has no matrix restriction.' };
+  }
+  return { status: 'pass', message: 'Industry not restricted by matrix.' };
 }
 
 function conciseReason(reasons: Reason[]) {
@@ -182,48 +363,75 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
   return funders.map((f) => {
     const reasons: Reason[] = [];
     const revenueMinimum = getIndustryMinimum(f, deal.industry);
+    const tibMinimum = timeInBusinessRule(f, deal.industry);
+    const minFico = ficoRule(f, deal.industry, deal.positions);
+    const maxNsf = maxNsfRule(f.matrix_row['Max NSFs/Neg Days']);
+    const minDeposits = minDepositRule(f.matrix_row['Min Deposits/Month'], deal.industry);
+    const maxFunding = maxFundingRule(f, deal.positions);
 
-    if (deal.monthlyRevenue != null && revenueMinimum != null) {
-      reasons.push(deal.monthlyRevenue >= revenueMinimum
-        ? { status: 'pass', message: `Revenue clears $${revenueMinimum.toLocaleString()} min.` }
-        : { status: 'fail', message: `Revenue below $${revenueMinimum.toLocaleString()} min.` });
-    } else reasons.push({ status: 'unknown', message: 'Revenue check unavailable.' });
+    reasons.push(numericDecision(
+      'Revenue',
+      deal.monthlyRevenue,
+      revenueMinimum,
+      (value) => `Revenue clears $${value.toLocaleString()} min.`,
+      (value) => `Revenue below $${value.toLocaleString()} min.`,
+      'No revenue minimum in matrix.',
+      (dealValue, ruleValue) => dealValue >= ruleValue
+    ));
 
-    if (deal.timeInBusinessMonths != null && f.min_time_in_business_months != null) {
-      reasons.push(deal.timeInBusinessMonths >= f.min_time_in_business_months
-        ? { status: 'pass', message: `TIB clears ${f.min_time_in_business_months} mo min.` }
-        : { status: 'fail', message: `TIB below ${f.min_time_in_business_months} mo min.` });
-    } else reasons.push({ status: 'unknown', message: 'TIB check unavailable.' });
+    reasons.push(numericDecision(
+      'TIB',
+      deal.timeInBusinessMonths,
+      tibMinimum,
+      (value) => `TIB clears ${value} mo min.`,
+      (value) => `TIB below ${value} mo min.`,
+      'No TIB minimum in matrix.',
+      (dealValue, ruleValue) => dealValue >= ruleValue
+    ));
 
-    if (deal.fico != null && f.min_fico != null && f.min_fico > 0) {
-      reasons.push(deal.fico >= f.min_fico
-        ? { status: 'pass', message: `FICO clears ${f.min_fico} min.` }
-        : { status: 'fail', message: `FICO below ${f.min_fico} min.` });
-    } else reasons.push({ status: 'unknown', message: 'FICO check unavailable.' });
+    reasons.push(numericDecision(
+      'FICO',
+      deal.fico,
+      minFico,
+      (value) => `FICO clears ${value} min.`,
+      (value) => `FICO below ${value} min.`,
+      'No FICO minimum in matrix.',
+      (dealValue, ruleValue) => dealValue >= ruleValue
+    ));
 
-    const maxNsf = toNum(f.matrix_row['Max NSFs/Neg Days']);
-    if (deal.nsfCount != null && maxNsf != null) {
-      reasons.push(deal.nsfCount <= maxNsf ? { status: 'pass', message: `NSFs within ${maxNsf} max.` } : { status: 'fail', message: `NSFs exceed ${maxNsf} max.` });
-    } else reasons.push({ status: 'unknown', message: 'NSF guideline not explicit.' });
+    reasons.push(numericDecision(
+      'NSF',
+      deal.nsfCount,
+      maxNsf,
+      (value) => `NSFs within ${value} max.`,
+      (value) => `NSFs exceed ${value} max.`,
+      'No NSF/negative-day cap in matrix.',
+      (dealValue, ruleValue) => dealValue <= ruleValue
+    ));
 
-    const minDeposits = toNum(f.matrix_row['Min Deposits/Month']);
-    if (deal.depositsPerMonth != null && minDeposits != null) {
-      reasons.push(deal.depositsPerMonth >= minDeposits ? { status: 'pass', message: `Deposits clear ${minDeposits}/mo min.` } : { status: 'fail', message: `Deposits below ${minDeposits}/mo min.` });
-    } else reasons.push({ status: 'unknown', message: 'Deposit check unavailable.' });
+    reasons.push(numericDecision(
+      'Deposits',
+      deal.depositsPerMonth,
+      minDeposits,
+      (value) => `Deposits clear ${value}/mo min.`,
+      (value) => `Deposits below ${value}/mo min.`,
+      'No deposit-count minimum in matrix.',
+      (dealValue, ruleValue) => dealValue >= ruleValue
+    ));
 
     reasons.push(positionDecision(deal.positions, f.positions));
     reasons.push(stateDecision(deal.state, f.states));
+    reasons.push(industryDecision(f, deal));
 
-    if (deal.industry) {
-      if (normalizedIndustryMatch(deal.industry, f.industry_no)) reasons.push({ status: 'fail', message: 'Industry is prohibited.' });
-      else if (normalizedIndustryMatch(deal.industry, f.industry_yes)) reasons.push({ status: 'pass', message: 'Industry accepted.' });
-      else if (normalizedIndustryMatch(deal.industry, f.industry_maybe)) reasons.push({ status: 'warn', message: 'Industry is conditional.' });
-      else reasons.push({ status: 'warn', message: 'Industry not explicitly listed.' });
-    } else reasons.push({ status: 'unknown', message: 'Industry not provided.' });
-
-    if (deal.requestedAmount != null && f.max_funding != null) {
-      reasons.push(deal.requestedAmount <= f.max_funding ? { status: 'pass', message: `Request within $${f.max_funding.toLocaleString()} max.` } : { status: 'fail', message: `Request above $${f.max_funding.toLocaleString()} max.` });
-    } else reasons.push({ status: 'unknown', message: 'Funding cap check unavailable.' });
+    reasons.push(numericDecision(
+      'Funding request',
+      deal.requestedAmount,
+      maxFunding,
+      (value) => `Request within $${value.toLocaleString()} max.`,
+      (value) => `Request above $${value.toLocaleString()} max.`,
+      'No funding cap in matrix.',
+      (dealValue, ruleValue) => dealValue <= ruleValue
+    ));
 
     const fails = reasons.filter((r) => r.status === 'fail').length;
     const warns = reasons.filter((r) => r.status === 'warn').length;
