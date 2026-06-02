@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { requireUser } from '@/lib/auth';
+import { requireRole } from '@/lib/auth';
 import { getProcessingQueue } from '@/lib/queries';
 
 function formatDate(value?: string | null) {
@@ -22,8 +22,7 @@ function readinessSignal(item: { hasApplication: boolean; hasStatements: boolean
 }
 
 export default async function ProcessingQueuePage() {
-  const { profile } = await requireUser();
-  if (profile.role !== 'admin') return <p className="text-sm text-muted-foreground">Processing desk access is admin-only.</p>;
+  await requireRole(['admin']);
   const queue = await getProcessingQueue();
 
   return <div className="space-y-4"><div><h1 className="text-2xl font-semibold">Processing Queue</h1><p className="text-sm text-muted-foreground">Underwriting submissions listed by newest submitted first. Open a file to use the Deal Router / Match Engine with Recommended, Possible, and Declined funders.</p></div>

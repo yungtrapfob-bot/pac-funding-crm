@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { requireRole } from '@/lib/auth';
 import type { UserRole } from '@/types/db';
 import { toUiPipelineStage } from '@/lib/utils';
 
@@ -15,6 +16,7 @@ export async function getDeals(role: UserRole, userId: string, repFilterId?: str
 }
 
 export async function getProcessingQueue() {
+  await requireRole(['admin']);
   const supabase = await createClient();
   const { data: deals } = await supabase
     .from('deals')
