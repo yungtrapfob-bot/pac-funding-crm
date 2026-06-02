@@ -492,11 +492,11 @@ export async function createDeal(formData: FormData) {
 
 export async function deleteHotLead(formData: FormData) {
   await requireRole(["admin"]);
-  const adminSupabase = createAdminClient();
+  const supabase = await createClient();
   const leadId = String(formData.get("hot_lead_id") ?? "");
   if (!leadId) redirect("/hot-leads?delete=missing");
 
-  const { data: lead, error: leadError } = await adminSupabase
+  const { data: lead, error: leadError } = await supabase
     .from("hot_leads")
     .select("id")
     .eq("id", leadId)
@@ -504,18 +504,17 @@ export async function deleteHotLead(formData: FormData) {
   if (leadError) throw new Error(leadError.message);
   if (!lead) redirect("/hot-leads?delete=missing");
 
-  const { data: conversionActivity, error: conversionError } =
-    await adminSupabase
-      .from("activities")
-      .select("deal_id")
-      .eq("hot_lead_id", leadId)
-      .eq("activity_type", "hot_lead_converted")
-      .not("deal_id", "is", null)
-      .limit(1)
-      .maybeSingle();
+  const { data: conversionActivity, error: conversionError } = await supabase
+    .from("activities")
+    .select("deal_id")
+    .eq("hot_lead_id", leadId)
+    .eq("activity_type", "hot_lead_converted")
+    .not("deal_id", "is", null)
+    .limit(1)
+    .maybeSingle();
   if (conversionError) throw new Error(conversionError.message);
 
-  const { data: convertedDeal, error: convertedDealError } = await adminSupabase
+  const { data: convertedDeal, error: convertedDealError } = await supabase
     .from("deals")
     .select("id")
     .eq("converted_from_hot_lead_id", leadId)
@@ -526,17 +525,19 @@ export async function deleteHotLead(formData: FormData) {
   if (conversionActivity?.deal_id || convertedDeal?.id)
     redirect(`/hot-leads/${leadId}?delete=converted`);
 
-  const { error: activityDeleteError } = await adminSupabase
+  const { error: activityDeleteError } = await supabase
     .from("activities")
     .delete()
     .eq("hot_lead_id", leadId);
   if (activityDeleteError) throw new Error(activityDeleteError.message);
 
-  const { error } = await adminSupabase
+  const { data: deletedRows, error } = await supabase
     .from("hot_leads")
     .delete()
-    .eq("id", leadId);
+    .eq("id", leadId)
+    .select("id");
   if (error) throw new Error(error.message);
+  if (!deletedRows?.length) throw new Error("Hot lead delete did not remove a row.");
 
   revalidatePath("/hot-leads");
   revalidatePath("/dashboard");

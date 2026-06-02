@@ -67,6 +67,10 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
     const { data: linkedDeal } = await supabase.from('deals').select('id,current_stage').eq('id', conversionActivity.deal_id).maybeSingle();
     convertedDeal = linkedDeal;
   }
+  if (!convertedDeal) {
+    const { data: referencedDeal } = await supabase.from('deals').select('id,current_stage').eq('converted_from_hot_lead_id', lead.id).limit(1).maybeSingle();
+    convertedDeal = referencedDeal;
+  }
 
   return (
     <div className="space-y-4">

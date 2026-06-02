@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin';
+import { requireRole } from '@/lib/auth';
 
 export type InternalUserProfile = {
   id: string;
@@ -11,6 +12,7 @@ export type InternalUserProfile = {
 const INTERNAL_ROLES = new Set(['admin', 'rep']);
 
 export async function getInternalUserProfiles(): Promise<InternalUserProfile[]> {
+  await requireRole(['admin']);
   const adminClient = createAdminClient();
   const { data, error } = await adminClient
     .from('profiles')
