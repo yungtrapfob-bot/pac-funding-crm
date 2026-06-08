@@ -40,7 +40,7 @@ Use this checklist before onboarding outside sales reps.
 
 - Reps cannot see lead delete UI and cannot execute the delete server action.
 - Admin can delete non-converted test/junk hot leads.
-- Converted hot leads are protected when either a conversion activity links a deal or a deal references `converted_from_hot_lead_id`.
+- Converted hot leads are protected when the canonical `hot_lead_converted` activity links the source hot lead to its deal.
 - Lead activity rows are removed before the lead delete to avoid deployed databases with missing cascade behavior causing a dashboard error. The delete flow now uses the authenticated admin Supabase client plus an explicit admin-only `activities` delete policy, so it no longer depends on the service-role client for ordinary junk/test lead cleanup.
 
 ## Manual verification steps

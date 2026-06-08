@@ -308,7 +308,6 @@ export async function convertHotLeadToDeal(formData: FormData) {
       notes: lead.notes,
       internal_notes: requestedAmountNote,
       assigned_rep_id: ownerId,
-      converted_from_hot_lead_id: lead.id,
     })
     .select("id")
     .single();
@@ -397,7 +396,6 @@ export async function submitHotLeadConversion(
       requestedAmountNote,
     ),
     assigned_rep_id: assignedRepId,
-    converted_from_hot_lead_id: lead.id,
   };
 
   const { data: deal, error: dealError } = await supabase
@@ -514,15 +512,7 @@ export async function deleteHotLead(formData: FormData) {
     .maybeSingle();
   if (conversionError) throw new Error(conversionError.message);
 
-  const { data: convertedDeal, error: convertedDealError } = await supabase
-    .from("deals")
-    .select("id")
-    .eq("converted_from_hot_lead_id", leadId)
-    .limit(1)
-    .maybeSingle();
-  if (convertedDealError) throw new Error(convertedDealError.message);
-
-  if (conversionActivity?.deal_id || convertedDeal?.id)
+  if (conversionActivity?.deal_id)
     redirect(`/hot-leads/${leadId}?delete=converted`);
 
   const { error: activityDeleteError } = await supabase
