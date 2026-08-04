@@ -58,15 +58,15 @@ const money = (value: number | null) => value == null ? '—' : `$${Number(value
 const plain = (value: string | null) => value && value.trim().length > 0 ? value : '—';
 
 const fitClass: Record<RoutingFit, string> = {
-  YES: 'border-emerald-400/50 bg-emerald-500/15 text-emerald-200',
-  MAYBE: 'border-amber-400/50 bg-amber-500/15 text-amber-200',
-  NO: 'border-red-400/50 bg-red-500/15 text-red-200'
+  YES: 'border-emerald-400/50 bg-emerald-50 text-emerald-800',
+  MAYBE: 'border-amber-400/50 bg-amber-50 text-amber-800',
+  NO: 'border-red-400/50 bg-red-50 text-red-800'
 };
 
 const rowClass: Record<RoutingFit, string> = {
-  YES: 'border-l-4 border-l-emerald-400/80 bg-emerald-950/18 hover:bg-emerald-900/20',
-  MAYBE: 'border-l-4 border-l-amber-400/80 bg-amber-950/18 hover:bg-amber-900/20',
-  NO: 'border-l-4 border-l-red-400/80 bg-red-950/16 hover:bg-red-900/20'
+  YES: 'border-l-4 border-l-emerald-400/80 bg-emerald-50 hover:bg-emerald-100/70',
+  MAYBE: 'border-l-4 border-l-amber-400/80 bg-amber-50 hover:bg-amber-100/70',
+  NO: 'border-l-4 border-l-red-400/80 bg-red-50 hover:bg-red-100/70'
 };
 
 function inputLabel(label: string, children: ReactNode) {
@@ -195,7 +195,7 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
 
       <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
         <table className="w-full min-w-[1500px] text-sm">
-          <thead className="bg-slate-950/80 text-left text-slate-200">
+          <thead className="bg-muted/70 text-left text-foreground">
             <tr>
               <th className="p-3">Funder</th>
               <th className="p-3">Fit</th>
@@ -231,10 +231,10 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
                         <span>{result.minFico ?? '—'}</span>
                         <span>{money(result.maxFunding)}</span>
                         <span>{result.industrySummary}</span>
-                        <span><Badge className="border-sky-400/40 bg-sky-500/10 text-sky-100">{submissionMethodLabel(result.submissionMethod)}</Badge></span>
+                        <span><Badge className="border-sky-400/40 bg-sky-500/10 text-sky-800">{submissionMethodLabel(result.submissionMethod)}</Badge></span>
                         <span className="flex flex-wrap gap-1">
-                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${targetFunders.includes(result.funderName) ? 'border-emerald-400 bg-emerald-500/20 text-emerald-100' : 'border-border bg-background/70 text-foreground hover:border-emerald-400/60'}`} onClick={(event) => { event.preventDefault(); toggleTarget(result.funderName); }}>{targetFunders.includes(result.funderName) ? 'Targeted' : 'Mark target'}</button>
-                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${queuedFunders.includes(result.funderName) ? 'border-sky-400 bg-sky-500/20 text-sky-100' : 'border-border bg-background/70 text-foreground hover:border-sky-400/60'}`} onClick={(event) => { event.preventDefault(); toggleQueued(result.funderName); }}>{queuedFunders.includes(result.funderName) ? 'Queued' : 'Queue'}</button>
+                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${targetFunders.includes(result.funderName) ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-border bg-background/70 text-foreground hover:border-emerald-400/60'}`} onClick={(event) => { event.preventDefault(); toggleTarget(result.funderName); }}>{targetFunders.includes(result.funderName) ? 'Targeted' : 'Mark target'}</button>
+                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${queuedFunders.includes(result.funderName) ? 'border-sky-400 bg-sky-100 text-sky-800' : 'border-border bg-background/70 text-foreground hover:border-sky-400/60'}`} onClick={(event) => { event.preventDefault(); toggleQueued(result.funderName); }}>{queuedFunders.includes(result.funderName) ? 'Queued' : 'Queue'}</button>
                         </span>
                       </summary>
                       <div className="border-t border-border/80 bg-background/95 p-4">
@@ -244,7 +244,7 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
                             <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
                               {result.reasons.map((reason, index) => (
                                 <li key={`${reason.message}-${index}`}>
-                                  <span className={reason.status === 'fail' ? 'font-medium text-red-300' : reason.status === 'warn' ? 'font-medium text-amber-300' : reason.status === 'pass' ? 'font-medium text-emerald-300' : 'font-medium'}>
+                                  <span className={reason.status === 'fail' ? 'font-medium text-red-700' : reason.status === 'warn' ? 'font-medium text-amber-700' : reason.status === 'pass' ? 'font-medium text-emerald-700' : 'font-medium'}>
                                     {reason.status.toUpperCase()}:
                                   </span>{' '}{reason.message}
                                 </li>
@@ -265,8 +265,8 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
                           </div>
                         </div>
                         <div className="mt-4 grid gap-2 rounded-md border border-border/80 bg-card/70 p-3 text-sm lg:grid-cols-3">
-                          <button type="button" className="rounded-md border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 font-medium text-emerald-100 hover:bg-emerald-500/20" onClick={() => toggleTarget(result.funderName)}>{targetFunders.includes(result.funderName) ? 'Target marked' : 'Mark target'}</button>
-                          <button type="button" className="rounded-md border border-sky-400/40 bg-sky-500/10 px-3 py-2 font-medium text-sky-100 hover:bg-sky-500/20" onClick={() => toggleQueued(result.funderName)}>{queuedFunders.includes(result.funderName) ? 'Queued for submission' : 'Queue for submission'}</button>
+                          <button type="button" className="rounded-md border border-emerald-400/40 bg-emerald-50 px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100" onClick={() => toggleTarget(result.funderName)}>{targetFunders.includes(result.funderName) ? 'Target marked' : 'Mark target'}</button>
+                          <button type="button" className="rounded-md border border-sky-400/40 bg-sky-500/10 px-3 py-2 font-medium text-sky-800 hover:bg-sky-100" onClick={() => toggleQueued(result.funderName)}>{queuedFunders.includes(result.funderName) ? 'Queued for submission' : 'Queue for submission'}</button>
                           <a href={`/admin/funders?search=${encodeURIComponent(result.funderName)}`} className="inline-flex items-center justify-center rounded-md border border-border bg-muted px-3 py-2 font-medium text-foreground hover:border-primary/50 hover:bg-card">Open full guidelines</a>
                         </div>
                         <div className="mt-4 grid gap-3 lg:grid-cols-3">

@@ -16,9 +16,9 @@ function currency(value?: number | null) { return `$${Number(value ?? 0).toLocal
 function readinessSignal(item: { hasApplication: boolean; hasStatements: boolean; current_stage: string | null }) {
   const stage = String(item.current_stage ?? '').toLowerCase();
   const alreadyReviewed = ['application processed', 'offers / declines received', 'offers', 'contracts requested', 'contracts signed', 'contracts out', 'funded'].some((s) => stage.includes(s));
-  if (alreadyReviewed) return { label: 'Already reviewed/submitted', className: 'bg-blue-600 text-white' };
-  if (item.hasApplication && item.hasStatements) return { label: 'Ready for review', className: 'bg-emerald-600 text-white' };
-  return { label: 'Needs docs', className: 'bg-amber-500 text-amber-950' };
+  if (alreadyReviewed) return { label: 'Already reviewed/submitted', className: 'bg-sky-100 text-sky-800 border border-sky-300' };
+  if (item.hasApplication && item.hasStatements) return { label: 'Ready for review', className: 'bg-emerald-100 text-emerald-800 border border-emerald-300' };
+  return { label: 'Needs docs', className: 'bg-amber-100 text-amber-900 border border-amber-300' };
 }
 
 export default async function ProcessingQueuePage() {

@@ -36,7 +36,7 @@ export default async function DealsPage({ searchParams }: { searchParams: { q?: 
     }
   }
 
-  return <div className="space-y-4"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Deals</h1><Link href="/deals/new" className="rounded-md bg-primary px-3 py-2 text-sm text-white">Submit Deal</Link></div>
+  return <div className="space-y-4"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">Deals</h1><Link href="/deals/new" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">Submit Deal</Link></div>
   <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm"><form className="grid grid-cols-1 gap-2 md:grid-cols-5"><Input name="q" defaultValue={q} placeholder="Search business, owner, email"/><Input name="stage" defaultValue={stage} placeholder="Filter by exact stage"/>
     {profile.role === 'admin' ? <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="">All reps</option>{(reps ?? []).map((internalRep) => <option key={internalRep.id} value={internalRep.id}>{internalRep.full_name ?? internalRep.id}</option>)}</select> : null}
     <button className="rounded-md border border-border px-3 py-2 text-sm">Filter</button></form></Card>

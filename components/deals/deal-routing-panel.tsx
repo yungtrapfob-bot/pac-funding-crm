@@ -8,9 +8,9 @@ import { Button } from '@/components/ui/button';
 import { submissionMethodLabel, type RoutingResult } from '@/lib/funder-routing';
 
 function reasonTone(status: string) {
-  if (status === 'pass') return 'text-emerald-300';
-  if (status === 'fail') return 'text-red-300';
-  if (status === 'warn') return 'text-amber-300';
+  if (status === 'pass') return 'text-emerald-700';
+  if (status === 'fail') return 'text-red-700';
+  if (status === 'warn') return 'text-amber-700';
   return 'text-muted-foreground';
 }
 
@@ -39,8 +39,8 @@ function Section({ title, items, dealId, targetFunders, queuedFunders, toggleTar
           {item.reasons.slice(0, 5).map((reason, idx) => <li key={idx} className={reasonTone(reason.status)}><span className="font-medium">{reason.status.toUpperCase()}:</span> {reason.message}</li>)}
         </ul>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <Button type="button" className={targetFunders.includes(item.funderName) ? 'justify-start border-emerald-400 bg-emerald-500/20 text-emerald-100' : 'justify-start'} onClick={() => toggleTarget(item.funderName)}>{targetFunders.includes(item.funderName) ? 'Target marked' : 'Mark target'}</Button>
-          <Button type="button" className={queuedFunders.includes(item.funderName) ? 'justify-start border-sky-400 bg-sky-500/20 text-sky-100' : 'justify-start'} onClick={() => toggleQueued(item.funderName)}>{queuedFunders.includes(item.funderName) ? 'Queued' : 'Queue for submission'}</Button>
+          <Button type="button" className={targetFunders.includes(item.funderName) ? 'justify-start border-emerald-400 bg-emerald-100 text-emerald-800' : 'justify-start'} onClick={() => toggleTarget(item.funderName)}>{targetFunders.includes(item.funderName) ? 'Target marked' : 'Mark target'}</Button>
+          <Button type="button" className={queuedFunders.includes(item.funderName) ? 'justify-start border-sky-400 bg-sky-100 text-sky-800' : 'justify-start'} onClick={() => toggleQueued(item.funderName)}>{queuedFunders.includes(item.funderName) ? 'Queued' : 'Queue for submission'}</Button>
           <Link href={`/admin/funders?dealId=${encodeURIComponent(dealId)}&search=${encodeURIComponent(item.funderName)}`} className="inline-flex h-9 items-center justify-center rounded-md border border-border bg-muted px-3 text-sm font-medium text-foreground transition duration-120 ease-out hover:border-primary/50 hover:bg-card">Open full guidelines</Link>
         </div>
       </div>)}
