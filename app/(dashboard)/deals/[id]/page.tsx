@@ -456,7 +456,7 @@ export default async function DealDetailPage({
                     type="submit"
                     className={
                       selected?.id === o.id
-                        ? "bg-secondary text-secondary-foreground hover:opacity-100"
+                        ? "border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100"
                         : undefined
                     }
                     disabled={selected?.id === o.id || o.status === "declined"}
