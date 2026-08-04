@@ -5,7 +5,7 @@ import { loadNormalizedFunderImport } from '@/lib/funder-master-import';
 import { inferSubmissionMethodFromText, normalizeSubmissionMethod, type FunderMasterRecord, type StoredSubmissionMethod } from '@/lib/funder-routing';
 import { updateFunderSubmissionConfig } from '@/actions/funders';
 
-type SearchParams = { search?: string; dealId?: string };
+type SearchParams = { search?: string; dealId?: string; configSaved?: string; configError?: string; funder?: string };
 
 const fieldValue = (value: unknown) => value == null ? '' : String(value);
 
@@ -19,10 +19,10 @@ function extractRequestedAmountFromInternalNotes(value?: string | null) {
 export default async function AdminFundersPage({ searchParams }: { searchParams?: SearchParams }) {
   await requireRole(['admin']);
   const supabase = await createClient();
-  const [{ data: funders }, fallbackImport, { data: dealRows }] = await Promise.all([
+  const [{ data: submissionConfigs, error: submissionConfigError }, fallbackImport, { data: dealRows }] = await Promise.all([
     supabase
-      .from('funder_master')
-      .select('id,funder_name,positions,states,min_monthly_revenue,min_time_in_business_months,min_fico,max_funding,payment_frequency,submission_method,submission_endpoint,primary_submission_email,submission_cc,submission_bcc,subject_template,body_template,required_document_types,internal_submission_notes,is_active,required_docs,industry_yes,industry_maybe,industry_no,notes,matrix_row')
+      .from('funder_submission_configs')
+      .select('funder_key,funder_name,submission_method,primary_submission_email,submission_cc,submission_bcc,subject_template,body_template,required_document_types,internal_submission_notes,is_active,created_at,updated_at')
       .order('funder_name'),
     loadNormalizedFunderImport(),
     searchParams?.dealId
@@ -47,35 +47,40 @@ export default async function AdminFundersPage({ searchParams }: { searchParams?
     fico: fieldValue(deal.fico)
   } : DEFAULT_DEAL_INPUTS;
 
-  const effectiveFunders: FunderMasterRecord[] = (funders?.length ? funders.map((funder) => ({
-    ...funder,
-    submission_method: normalizeSubmissionMethod(funder.submission_method as StoredSubmissionMethod)
-  })) : fallbackImport.funders.map((f) => ({
-    funder_name: f.funderName,
-    positions: f.positions,
-    states: f.states,
-    min_monthly_revenue: f.minMonthlyRevenue,
-    min_time_in_business_months: f.minTimeInBusinessMonths,
-    min_fico: f.minFico,
-    max_funding: f.maxFunding,
-    payment_frequency: f.paymentFrequency,
-    submission_method: inferSubmissionMethodFromText(f.notes, f.requiredDocs),
-    submission_endpoint: '',
-    required_docs: f.requiredDocs,
-    industry_yes: f.industryYes,
-    industry_maybe: f.industryMaybe,
-    industry_no: f.industryNo,
-    notes: f.notes,
-    primary_submission_email: null,
-    submission_cc: null,
-    submission_bcc: null,
-    subject_template: 'Submission: {{business_name}} - {{requested_amount}} - {{state}}',
-    body_template: '',
-    required_document_types: ['application', 'statement'],
-    internal_submission_notes: null,
-    is_active: true,
-    matrix_row: f.matrixRow
-  }))) ?? [];
+  const configByKey = new Map((submissionConfigs ?? []).map((config) => [config.funder_key, config]));
+
+  const effectiveFunders: FunderMasterRecord[] = fallbackImport.funders.map((f) => {
+    const key = f.funderName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const config = configByKey.get(key);
+
+    return {
+      id: key,
+      funder_name: f.funderName,
+      positions: f.positions,
+      states: f.states,
+      min_monthly_revenue: f.minMonthlyRevenue,
+      min_time_in_business_months: f.minTimeInBusinessMonths,
+      min_fico: f.minFico,
+      max_funding: f.maxFunding,
+      payment_frequency: f.paymentFrequency,
+      submission_method: config ? normalizeSubmissionMethod(config.submission_method as StoredSubmissionMethod) : inferSubmissionMethodFromText(f.notes, f.requiredDocs),
+      submission_endpoint: '',
+      required_docs: f.requiredDocs,
+      industry_yes: f.industryYes,
+      industry_maybe: f.industryMaybe,
+      industry_no: f.industryNo,
+      notes: f.notes,
+      primary_submission_email: config?.primary_submission_email ?? null,
+      submission_cc: config?.submission_cc ?? null,
+      submission_bcc: config?.submission_bcc ?? null,
+      subject_template: config?.subject_template ?? 'Submission: {{business_name}} - {{requested_amount}} - {{state}}',
+      body_template: config?.body_template ?? '',
+      required_document_types: config?.required_document_types ?? ['application', 'statement'],
+      internal_submission_notes: config?.internal_submission_notes ?? null,
+      is_active: config?.is_active ?? true,
+      matrix_row: f.matrixRow
+    };
+  });
 
   return (
     <div className="space-y-6">
@@ -89,10 +94,14 @@ export default async function AdminFundersPage({ searchParams }: { searchParams?
       <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
         <h2 className="font-semibold">Admin-only email submission configuration</h2>
         <p>Recipient emails, CC/BCC, templates, internal submission notes, required document types, and active status are loaded only on this admin route and are never hardcoded in UI components.</p>
+        {searchParams?.configSaved ? <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-emerald-800">Saved submission configuration for {searchParams.configSaved}.</p> : null}
+        {searchParams?.configError ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-red-800">Unable to save submission configuration{searchParams.funder ? ` for ${searchParams.funder}` : ''}. Please review the values and try again; the detailed error was logged for admins.</p> : null}
+        {submissionConfigError ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-red-800">Unable to load saved submission configurations right now. Funder routing guidelines are still available from the bundled import.</p> : null}
         <div className="mt-3 space-y-3">
           {effectiveFunders.slice(0, 12).map((funder) => (
             <form key={funder.id ?? funder.funder_name} action={updateFunderSubmissionConfig} className="grid gap-2 rounded bg-white/70 p-3 md:grid-cols-4">
-              <input type="hidden" name="id" value={funder.id ?? ''} />
+              <input type="hidden" name="funder_key" value={funder.id ?? ''} />
+              <input type="hidden" name="funder_name" value={funder.funder_name} />
               <p className="font-medium md:col-span-4">{funder.funder_name}</p>
               <select name="submission_method" defaultValue={String(funder.submission_method ?? 'tbd')} className="rounded-md border px-2 py-1"><option value="email">Email</option><option value="api">API</option><option value="portal">Portal</option><option value="manual_portal">Manual Portal</option><option value="tbd">TBD</option></select>
               <input name="primary_submission_email" defaultValue={funder.primary_submission_email ?? ''} placeholder="Primary submission email" className="rounded-md border px-2 py-1" />
