@@ -20,6 +20,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { evaluateFunders, type FunderMasterRecord } from "@/lib/funder-routing";
 import { DealRoutingPanel } from "@/components/deals/deal-routing-panel";
+import { FunderSubmissionsWorkspace } from "@/components/deals/funder-submissions-workspace";
+import { buildPreview } from "@/lib/funder-submissions";
 
 function parseTermPayments(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0)
@@ -82,7 +84,7 @@ export default async function DealDetailPage({
     ? await supabase
         .from("funder_master")
         .select(
-          "funder_name,positions,states,min_monthly_revenue,min_time_in_business_months,min_fico,max_funding,payment_frequency,required_docs,industry_yes,industry_maybe,industry_no,notes,submission_method,submission_endpoint,matrix_row",
+          "id,funder_name,positions,states,min_monthly_revenue,min_time_in_business_months,min_fico,max_funding,payment_frequency,required_docs,required_document_types,industry_yes,industry_maybe,industry_no,notes,submission_method,submission_endpoint,primary_submission_email,submission_cc,submission_bcc,subject_template,body_template,internal_submission_notes,is_active,matrix_row",
         )
         .order("funder_name")
     : { data: [] };
@@ -99,6 +101,23 @@ export default async function DealDetailPage({
       return { ...file, signedUrl: data?.signedUrl ?? null };
     }),
   );
+
+  const { data: submissionLogs } = isAdmin
+    ? await supabase
+        .from("funder_submission_logs")
+        .select("*")
+        .eq("deal_id", params.id)
+        .order("submitted_at", { ascending: false })
+    : { data: [] };
+  const latestSubmissionByFunder = new Map(
+    (submissionLogs ?? []).map((log) => [log.funder_id, log]),
+  );
+  const submissionPreviews = isAdmin
+    ? ((funders ?? []) as Parameters<typeof buildPreview>[1][])
+        .filter((funder) => funder.is_active !== false)
+        .map((funder) => buildPreview(deal, funder, files ?? [], latestSubmissionByFunder.get(funder.id)))
+    : [];
+
   const selected =
     (offers ?? []).find(
       (o) => String(o.status ?? "").toLowerCase() === "accepted",
@@ -313,7 +332,10 @@ export default async function DealDetailPage({
       </Card>
 
       {isAdmin ? (
-        <DealRoutingPanel results={routingResults} dealId={deal.id} />
+        <>
+          <DealRoutingPanel results={routingResults} dealId={deal.id} />
+          <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults} />
+        </>
       ) : null}
 
       <Card>
@@ -508,6 +530,22 @@ export default async function DealDetailPage({
       {isAdmin ? (
         <>
           <Card>
+            <h2 className="mb-2 text-lg font-medium">Submission History</h2>
+            <div className="space-y-2 text-sm">
+              {(submissionLogs ?? []).length ? (submissionLogs ?? []).map((log) => (
+                <div key={log.id} className="rounded border p-3">
+                  <p className="font-medium">{log.funder_name} · {log.status}</p>
+                  <p className="text-muted-foreground">{log.recipient} · {new Date(log.submitted_at).toLocaleString()}</p>
+                  <p>{log.subject}</p>
+                  <p className="text-xs text-muted-foreground">Files: {(log.filenames_attached ?? []).join(", ") || "—"}</p>
+                  {log.provider_message_id ? <p className="text-xs">Provider ID: {log.provider_message_id}</p> : null}
+                  {log.error_details ? <p className="text-xs text-red-700">{log.error_details}</p> : null}
+                </div>
+              )) : <p className="text-muted-foreground">No submissions yet.</p>}
+            </div>
+          </Card>
+
+          <Card className="hidden">
             <h2 className="mb-2 text-lg font-medium">
               Processing Submission Desk (Future Funder Routing)
             </h2>
