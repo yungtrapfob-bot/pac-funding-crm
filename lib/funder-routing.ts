@@ -4,6 +4,7 @@ export type StoredSubmissionMethod = SubmissionMethod | 'unknown_tbd' | string |
 type MatrixRow = Record<string, string>;
 
 export type FunderMasterRecord = {
+  id?: string;
   funder_name: string;
   positions: string | null;
   states: string | null;
@@ -19,6 +20,14 @@ export type FunderMasterRecord = {
   notes: string | null;
   submission_method: StoredSubmissionMethod;
   submission_endpoint: string | null;
+  primary_submission_email?: string | null;
+  submission_cc?: string | null;
+  submission_bcc?: string | null;
+  subject_template?: string | null;
+  body_template?: string | null;
+  required_document_types?: string[] | null;
+  internal_submission_notes?: string | null;
+  is_active?: boolean | null;
   matrix_row: MatrixRow;
 };
 
