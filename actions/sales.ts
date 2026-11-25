@@ -24,8 +24,16 @@ export async function recordSalesAction(_: SalesResult, form: FormData): Promise
   const dueAt = due ? parsePacificInput(due) : null;
   if (due && !dueAt) return { status: 'error', message: 'Choose a valid Pacific date and time.' };
   const supabase = await createClient();
-  const { error } = await supabase.rpc('crm_record_sales_action', {
-    entity, record_id: id, action, value: value ?? null, explanation: note ?? null, due_at: dueAt,
+  if (action === 'test_record' && value !== 'true' && value !== 'false') {
+    return { status: 'error', message: 'Choose a test designation.' };
+  }
+  const designation = value === 'true' ? 'mark_test' : 'clear_test';
+  const { error } = action === 'test_record'
+    ? entity === 'lead'
+      ? await supabase.rpc('crm_sales_manage_leads', { lead_ids: [id], operation: designation })
+      : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: [id], operation: designation })
+    : await supabase.rpc('crm_record_sales_action', {
+    entity, record_id: id, action, value: value ?? (action === 'text' || action === 'email' ? 'logged' : null), explanation: note ?? null, due_at: dueAt,
   });
   if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'Could not save the action. Refresh and try again.' };
   revalidatePath(entity === 'lead' ? `/hot-leads/${id}` : `/deals/${id}`);
@@ -33,12 +41,42 @@ export async function recordSalesAction(_: SalesResult, form: FormData): Promise
   return { status: 'success', message: 'Saved.' };
 }
 
-const bulkOperation = z.enum(['archive', 'delete', 'restore', 'reassign']);
+export async function confirmApplicationDocuments(_: SalesResult, form: FormData): Promise<SalesResult> {
+  await requireUser();
+  const parsed = z.object({
+    id: z.guid(),
+    months: z.coerce.number().int().min(1).max(24),
+    exception: z.string().trim().max(500),
+  }).safeParse({ id: form.get('id'), months: form.get('months'), exception: form.get('exception') ?? '' });
+  if (!parsed.success || form.get('reviewed') !== 'yes') {
+    return { status: 'error', message: 'Review the application and enter the verified statement months.' };
+  }
+  const { id, months, exception } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('crm_confirm_application_documents', {
+    target_deal_id: id, months, exception_note: exception || null,
+  });
+  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'Could not confirm the application.' };
+  for (const path of [`/deals/${id}`, '/dashboard', '/deals', '/admin', '/admin/processing', '/admin/pipeline', '/performance']) {
+    revalidatePath(path);
+  }
+  return { status: 'success', message: 'Document review complete.' };
+}
+
+const bulkOperation = z.enum(['archive', 'delete', 'restore', 'reassign', 'mark_test', 'clear_test']);
 export type BulkResult = SalesResult & {
   preview?: { operation: string; rows: { id: string; business_name: string; reason: string | null }[] };
 };
 
 export async function manageSalesLeads(_: BulkResult, form: FormData): Promise<BulkResult> {
+  return manageSalesRecords(form, 'lead');
+}
+
+export async function manageSalesDeals(_: BulkResult, form: FormData): Promise<BulkResult> {
+  return manageSalesRecords(form, 'deal');
+}
+
+async function manageSalesRecords(form: FormData, entity: 'lead' | 'deal'): Promise<BulkResult> {
   await requireRole(['admin']);
   const parsed = z.object({
     ids: z.array(z.guid()).min(1).max(100),
@@ -49,21 +87,27 @@ export async function manageSalesLeads(_: BulkResult, form: FormData): Promise<B
     ids: form.getAll('lead_ids'), operation: form.get('operation'),
     mode: form.get('mode'), target: form.get('target') || undefined,
   });
-  if (!parsed.success) return { status: 'error', message: 'Choose leads and an action.' };
+  if (!parsed.success) {
+    return { status: 'error', message: `Choose ${entity}s and an action.` };
+  }
   const { ids, operation, mode, target } = parsed.data;
   const supabase = await createClient();
-  const lead_ids = [...new Set(ids.map(id => id.toLowerCase()))];
+  const recordIds = [...new Set(ids.map(id => id.toLowerCase()))];
   if (mode === 'preview') {
-    const { data, error } = await supabase.rpc('crm_sales_lead_eligibility', { lead_ids, operation });
-    if (error) return { status: 'error', message: 'Could not check the selected leads.' };
+    const { data, error } = entity === 'lead'
+      ? await supabase.rpc('crm_sales_lead_eligibility', { lead_ids: recordIds, operation })
+      : await supabase.rpc('crm_deal_cleanup_eligibility', { deal_ids: recordIds, operation });
+    if (error) return { status: 'error', message: `Could not check the selected ${entity}s.` };
     return { status: 'idle', preview: { operation, rows: data } };
   }
   if (operation === 'reassign' && !target) return { status: 'error', message: 'Choose an active sales rep.' };
-  const { data, error } = await supabase.rpc('crm_sales_manage_leads', {
-    lead_ids, operation, target_rep: target ?? null,
-  });
-  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'The action could not be completed. No selected leads were changed.' };
-  for (const path of ['/dashboard', '/hot-leads', '/admin', '/performance']) revalidatePath(path);
-  const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned' }[operation];
-  return { status: 'success', message: `${data} ${data === 1 ? 'lead' : 'leads'} ${verb}.` };
+  const { data, error } = entity === 'lead'
+    ? await supabase.rpc('crm_sales_manage_leads', { lead_ids: recordIds, operation, target_rep: target ?? null })
+    : operation === 'reassign'
+      ? await supabase.rpc('crm_reassign_cleanup_deals', { deal_ids: recordIds, target_rep: target })
+      : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: recordIds, operation });
+  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : `The action could not be completed. No selected ${entity}s were changed.` };
+  for (const path of ['/dashboard', '/hot-leads', '/deals', '/admin', '/admin/pipeline', '/admin/processing', '/performance']) revalidatePath(path);
+  const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned', mark_test: 'marked as test', clear_test: 'cleared of test designation' }[operation];
+  return { status: 'success', message: `${data} ${entity}${data === 1 ? '' : 's'} ${verb}.` };
 }

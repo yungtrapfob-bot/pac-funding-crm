@@ -18,11 +18,11 @@ export default async function ConvertHotLeadPage({ params: pendingParams }: { pa
   return (
     <div className="space-y-4 max-w-5xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Application / Underwriting Intake</h1>
+        <h1 className="text-2xl font-semibold">Submit to processing</h1>
         <Link href={`/hot-leads/${lead.id}`} className="text-sm text-primary hover:underline">Back to hot lead</Link>
       </div>
       <Card>
-        <p className="mb-4 text-sm text-muted-foreground">Review and complete this intake. Submitting creates a deal in the <strong>In Underwriting</strong> stage.</p>
+        <p className="mb-4 text-sm text-muted-foreground">Attach the application and bank statements. Files with missing documents remain in the document queue.</p>
         <ConvertHotLeadForm lead={lead} />
       </Card>
     </div>

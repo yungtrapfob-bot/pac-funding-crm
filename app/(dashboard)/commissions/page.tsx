@@ -9,14 +9,15 @@ export default async function CommissionsPage() {
     split_role: string | null;
     split_percent: number | string | null;
     commission_amount: number | string | null;
-    deals: { business_name: string | null } | null;
+    deals: { business_name: string | null; sales_test: boolean } | null;
     profiles: { full_name: string | null } | null;
   };
 
-  let query = supabase.from('commissions').select('*, deals(business_name, funded_date), profiles(full_name)').order('created_at', { ascending: false });
+  let query = supabase.from('commissions').select('*, deals(business_name, funded_date, sales_test), profiles(full_name)').order('created_at', { ascending: false });
   if (profile.role === 'rep') query = query.eq('rep_id', profile.id);
-  const { data } = await query;
-  const commissions = (data ?? []) as CommissionRowWithRelations[];
+  const { data, error } = await query;
+  if (error) return <p role="alert">The commission ledger is unavailable.</p>;
+  const commissions = ((data ?? []) as CommissionRowWithRelations[]).filter(row => row.deals?.sales_test !== true);
 
   return (
     <div className="space-y-4">

@@ -4,7 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { readSalesData } from '@/lib/sales-data';
 import { buildOpportunities, eventWithin, firstContactMedian, funnelStages, highValueRequest, lastDealActivity, lastLoss, matchedConversionRows, milestoneMedian, milestonePair, needsHighValueReview, observed, precedingPeriod, reportDates, salesAttentionDays, stageEntered, type Milestone, type SalesOpportunity } from '@/lib/sales-report';
 import { dealStages, eventLabels, lossReasons } from '@/lib/sales-labels';
-import { formatPacificDate, formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
+import { followUpBucket, formatPacificDate, formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
 
 type Filters = { period?: string; from?: string; to?: string; asOf?: string; cohort?: string; rep?: string; attribution?: string; metric?: string; sort?: string };
 type Result = { label: string; value: string | number; rows: SalesOpportunity[]; milestone?: Milestone };
@@ -12,7 +12,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const percent = (rate: number | null) => rate === null ? 'N/A' : (rate * 100).toFixed(1) + '%';
 const isActiveLead = (r: SalesOpportunity) => r.lead && !r.lead.archived_at && !r.lead.converted_at && !r.lead.sales_lost && !r.lead.sales_review;
-const isOpenDeal = (r: SalesOpportunity) => r.deal && !['funded','lost'].includes(r.deal.queue_stage);
+const isOpenDeal = (r: SalesOpportunity) => r.deal && !r.deal.archived_at && !['funded','lost'].includes(r.deal.queue_stage);
 const followup = (r: SalesOpportunity) => isOpenDeal(r) ? r.deal?.sales_follow_up_at : isActiveLead(r) ? r.lead?.next_follow_up_date : null;
 const fields = 'rounded border border-border bg-card px-2 py-1.5';
 
@@ -56,7 +56,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
   const loss = scoped.filter(row => lastLoss(row,dates));
   const due = scoped.filter(followup);
   const now = Date.now();
-  const overdue = due.filter(row => Date.parse(followup(row)!) < now);
+  const overdue = due.filter(row => followUpBucket(followup(row)!, new Date(now), row.deal ? undefined : row.lead?.created_at) === 'overdue');
   const views = new Map<string,Result>();
   const add = (key: string, label: string, rows: SalesOpportunity[], value: string | number = rows.length, milestone?: Milestone) => {
     views.set(key,{label,rows,value,milestone}); return key;
@@ -70,6 +70,10 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
   if (isAdmin && !rep) {
     activityKeys.push(add('gross','Gross earned commission',fundedRows,grossKnown && fundedRows.length ? money.format(gross) : 'N/A'));
     activityKeys.push(add('retained','Company retained commission',fundedRows,grossKnown && allHaveLedger && fundedRows.length ? money.format(gross-earned(fundedExpense)) : 'N/A'));
+  }
+  if (isAdmin) {
+    const priority = ['volume', 'gross', 'activity-application_completed', 'activity-funded'];
+    activityKeys.sort((a,b) => (priority.indexOf(a) + 1 || 20) - (priority.indexOf(b) + 1 || 20));
   }
   const funnelKeys = stages.map(stage => add('cohort-' + stage,eventLabels[stage],cohort.filter(row => observed(row,stage,dates))));
   const open = scoped.filter(isOpenDeal);
@@ -160,6 +164,9 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
         <label className="grid gap-1 text-sm">Period<select name="period" defaultValue={dates.period} className={fields}>
           <option value="today">Today</option><option value="week">This week</option><option value="month">This month</option><option value="30">Last 30 days</option><option value="custom">Custom range</option>
         </select></label>
+        <details className="min-w-0 rounded-md border border-border px-3 py-2" open={dates.period === 'custom' || by !== 'owner' || filters.cohort === 'application' || undefined}>
+          <summary className="cursor-pointer text-sm font-medium">Advanced filters</summary>
+          <div className="mt-2 flex flex-wrap gap-2">
         <label className="grid gap-1 text-sm">Custom start<input type="date" name="from" defaultValue={dates.from} className={fields} /></label>
         <label className="grid gap-1 text-sm">Custom end<input type="date" name="to" defaultValue={dates.to} className={fields} /></label>
         <label className="grid gap-1 text-sm">Observe through<input type="date" name="asOf" defaultValue={dates.asOf} className={fields} /></label>
@@ -171,6 +178,8 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
         </select></label><label className="grid gap-1 text-sm">Attribution<select name="attribution" defaultValue={by} className={fields}>
           <option value="owner">Original owner</option><option value="assignee">Current assignee</option><option value="closer">Closer</option><option value="processor">Processor</option>
         </select></label></>}
+          </div>
+        </details>
         <button type="submit" className="rounded bg-primary px-3 py-1.5 text-sm text-primary-foreground">Apply</button>
       </form>
       <p className="mt-2 text-sm text-muted-foreground">{dates.from} through {dates.to} · as of {dates.asOf} · Pacific</p>
@@ -190,6 +199,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
       <Card className="space-y-3">
         <h2 className="font-semibold">Opportunity cohort</h2>
         <p className="text-sm text-muted-foreground">{cohort.length} opportunities entered at {eventLabels[cohortStart].toLowerCase()} during the selected dates. Later events count through the observation date.</p>
+        {!cohort.length && <p className="rounded-md bg-muted/40 p-3 text-sm text-muted-foreground">Recorded lead and application activity will populate this funnel.</p>}
         <ol className="space-y-2">
           {funnelKeys.map((key,i) => {
             const stage = stages[i], item = views.get(key)!;

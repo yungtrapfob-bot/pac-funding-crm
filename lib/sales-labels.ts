@@ -47,3 +47,21 @@ export const eventLabels: Record<string, string> = {
 export const leadQueues = {
   active: 'Active', all: 'All leads', converted: 'Converted', lost: 'Lost', archived: 'Archived', review: 'Needs conversion review',
 } as const;
+
+export const dealQueueGroups: Record<string, { label: string; stages: string[] }> = {
+  processing: { label: 'Processing', stages: ['processing'] },
+  underwriting: { label: 'Underwriting', stages: ['submitted', 'underwriting', 'stipulations'] },
+  approved: { label: 'Approved', stages: ['approved'] },
+  offers: { label: 'Offers out', stages: ['pitched', 'considering'] },
+  contracts: { label: 'Contracts out', stages: ['contract_requested', 'contracts_out'] },
+  funding: { label: 'Final funding conditions', stages: ['contracts_signed', 'final_conditions'] },
+  documents: { label: 'Deals missing documents', stages: ['missing_documents'] },
+};
+
+export const callOutcomes = {
+  spoke: 'Spoke with merchant',
+  no_answer: 'No answer',
+  voicemail: 'Left voicemail',
+  callback_requested: 'Callback requested',
+  wrong_number: 'Wrong number',
+} as const;

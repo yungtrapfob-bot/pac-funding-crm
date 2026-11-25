@@ -10,12 +10,14 @@ export type SalesEvent = {
 };
 
 export type SalesLead = {
+  created_at?: string;
   id: string; business_name: string; assigned_rep_id: string | null; owner_profile_id: string | null;
   sales_source: string | null; sales_stage: string; sales_test: boolean; sales_lost: boolean; sales_review: boolean;
   archived_at: string | null; converted_at: string | null; next_follow_up_date: string | null; last_contact_date: string | null;
 };
 
 export type SalesDeal = {
+  archived_at?: string | null;
   id: string; business_name: string; assigned_rep_id: string | null; owner_profile_id: string | null; closer_rep_id: string | null;
   sales_processor_id: string | null; sales_stage: string | null; sales_source: string | null; current_stage: string; queue_stage: string; sales_test: boolean; sales_lost: boolean;
   converted_from_hot_lead_id: string | null; submitted_at: string; sales_follow_up_at: string | null; sales_next_action: string | null;
@@ -169,7 +171,7 @@ export function stageEntered(row: SalesOpportunity) {
 }
 
 export function needsHighValueReview(row: SalesOpportunity, now: number) {
-  if (!row.deal || ['funded', 'lost'].includes(row.deal.queue_stage) || !(Number(row.deal.requested_amount) >= highValueRequest)) return false;
+  if (!row.deal || row.deal.archived_at || ['funded', 'lost'].includes(row.deal.queue_stage) || !(Number(row.deal.requested_amount) >= highValueRequest)) return false;
   const activity = lastDealActivity(row);
   return Boolean(activity && now - Date.parse(activity) > salesAttentionDays * DAY);
 }
@@ -178,7 +180,7 @@ export function firstContactMedian(rows: SalesOpportunity[], dates: ReportDates)
   return median(rows.flatMap(row => {
     const start = observed(row, 'lead_created', dates);
     if (!start || start.date_only) return [];
-    const end = row.events.find(e => ['call','text','email'].includes(e.kind) && e.occurred_at >= start.occurred_at && e.occurred_at < dates.cutoff);
+    const end = row.events.find(e => ['call','text','email'].includes(e.kind) && (e.kind !== 'call' || !e.reason || ['spoke','callback_requested'].includes(e.reason)) && e.occurred_at >= start.occurred_at && e.occurred_at < dates.cutoff);
     return end ? [(Date.parse(end.occurred_at)-Date.parse(start.occurred_at))/DAY] : [];
   }));
 }

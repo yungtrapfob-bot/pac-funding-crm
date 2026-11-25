@@ -1,46 +1,63 @@
 'use client';
 
-import { useActionState } from 'react';
-import { useFormStatus } from 'react-dom';
-import { createHotLead, type HotLeadFormState } from '@/actions/deals';
+import { useActionState, useState } from 'react';
+import { createHotLead } from '@/actions/deals';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 
-const initialState: HotLeadFormState = { status: 'idle' };
+const contactFields = [
+  { name: 'business_name', label: 'Business name', required: true },
+  { name: 'owner_name', label: 'Contact name', required: true },
+  { name: 'phone', label: 'Phone', type: 'tel' },
+  { name: 'email', label: 'Email', type: 'email' },
+  { name: 'next_follow_up_date', label: 'Next follow-up (Pacific)', type: 'datetime-local' },
+];
 
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return <Button type="submit" disabled={pending} className="md:col-span-2">{pending ? 'Creating lead…' : 'Create Lead'}</Button>;
-}
+const optionalFields = [
+  { name: 'industry', label: 'Industry' },
+  { name: 'state', label: 'State' },
+  { name: 'monthly_revenue', label: 'Monthly revenue', type: 'number', min: 0 },
+  { name: 'time_in_business_months', label: 'Months in business', type: 'number', min: 0 },
+  { name: 'positions', label: 'Existing positions', type: 'number', min: 0 },
+  { name: 'fico', label: 'Credit score', type: 'number', min: 300, max: 850 },
+];
 
-function ErrorText({ message }: { message?: string[] }) {
-  if (!message?.length) return null;
-  return <p className="text-sm text-red-600">{message[0]}</p>;
-}
+export function NewHotLeadForm({ reps = [] }: { reps?: { id: string; full_name: string }[] }) {
+  const [state, formAction, pending] = useActionState(createHotLead, { status: 'idle' });
+  const [values, setValues] = useState<Record<string, string>>({});
+  const setField = (name: string, value: string) => setValues(current => ({ ...current, [name]: value }));
 
-export function NewHotLeadForm() {
-  const [state, formAction] = useActionState(createHotLead, initialState);
+  function field({ name, label, ...props }: { name: string; label: string; type?: string; required?: boolean; min?: number; max?: number }) {
+    const error = state.fieldErrors?.[name]?.[0];
+    return <label key={name} className="grid gap-1 text-sm font-medium">{label}
+      <Input {...props} name={name} value={values[name] ?? ''} onChange={event => setField(name, event.target.value)}
+        aria-invalid={Boolean(error)} aria-describedby={error ? name + '-error' : undefined} />
+      {error && <span id={name + '-error'} className="text-red-800">{error}</span>}
+    </label>;
+  }
 
-  return (
-    <form action={formAction} className="grid grid-cols-1 gap-3 md:grid-cols-2">
-      {state.status === 'error' && state.message ? <p className="md:col-span-2 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{state.message}</p> : null}
-      <div><Input name="business_name" placeholder="Business name" required /><ErrorText message={state.fieldErrors?.business_name} /></div>
-      <div><Input name="owner_name" placeholder="Owner name" required /><ErrorText message={state.fieldErrors?.owner_name} /></div>
-      <div><Input name="phone" placeholder="Phone" required /><ErrorText message={state.fieldErrors?.phone} /></div>
-      <div><Input type="email" name="email" placeholder="Email" required /><ErrorText message={state.fieldErrors?.email} /></div>
-      <div><Input name="industry" placeholder="Industry" /><ErrorText message={state.fieldErrors?.industry} /></div>
-      <div><Input type="number" name="monthly_revenue" placeholder="Monthly revenue" min={0} /><ErrorText message={state.fieldErrors?.monthly_revenue} /></div>
-      <div><Input type="number" name="time_in_business_months" placeholder="Time in business (months)" min={0} /><ErrorText message={state.fieldErrors?.time_in_business_months} /></div>
-      <div><Input name="state" placeholder="State" /><ErrorText message={state.fieldErrors?.state} /></div>
-      <div><Input type="number" name="positions" placeholder="Positions" min={0} /><ErrorText message={state.fieldErrors?.positions} /></div>
-      <div><Input type="number" name="nsf_count" placeholder="NSF count" min={0} /><ErrorText message={state.fieldErrors?.nsf_count} /></div>
-      <div><Input type="number" name="deposits" placeholder="Deposits" min={0} /><ErrorText message={state.fieldErrors?.deposits} /></div>
-      <div><Input type="number" name="fico" placeholder="FICO" min={300} max={850} /><ErrorText message={state.fieldErrors?.fico} /></div>
-      <div><select name="follow_up_status" defaultValue="pending" className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option></select></div>
-      <div><Input type="datetime-local" aria-label="Follow-up date and time (Pacific)" name="next_follow_up_date" /><ErrorText message={state.fieldErrors?.next_follow_up_date} /></div>
-      <Input name="outcome_tag" placeholder="Outcome tag" />
-      <textarea name="notes" placeholder="Initial contact context / notes" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
-      <SubmitButton />
-    </form>
-  );
+  return <form action={formAction} className="rounded-lg border border-border bg-card p-4">
+    {state.message && <p role="alert" className="mb-3 rounded-md bg-red-50 p-3 text-sm text-red-800">{state.message}</p>}
+    <p className="mb-3 text-sm text-muted-foreground">Enter a business name, contact name, and either a phone number or email.</p>
+    <div className="grid gap-3 sm:grid-cols-2">{contactFields.map(field)}</div>
+    {reps.length > 0 && <label className="mt-3 grid max-w-sm gap-1 text-sm font-medium">Assign to
+      <select name="assigned_rep_id" value={values.assigned_rep_id ?? ''} onChange={event => setField('assigned_rep_id', event.target.value)}
+        className="rounded-md border border-border bg-card p-2">
+        <option value="">Me</option>
+        {reps.map(rep => <option key={rep.id} value={rep.id}>{rep.full_name}</option>)}
+      </select>
+    </label>}
+    <label className="mt-3 grid gap-1 text-sm font-medium">Notes
+      <textarea name="notes" maxLength={3000} value={values.notes ?? ''} onChange={event => setField('notes', event.target.value)}
+        className="min-h-20 rounded-md border border-border bg-card p-2" />
+    </label>
+    <details className="my-4 border-y border-border py-3">
+      <summary className="cursor-pointer text-sm font-medium">Optional business details</summary>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">{optionalFields.map(field)}</div>
+    </details>
+    {state.duplicate && <label className="mb-3 flex items-center gap-2 text-sm">
+      <input type="checkbox" name="confirm_duplicate" value="yes" /> Create a separate opportunity
+    </label>}
+    <Button type="submit" disabled={pending}>{pending ? 'Creating lead…' : 'Create lead'}</Button>
+  </form>;
 }

@@ -1,10 +1,9 @@
-import { formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
+import { followUpBucket, formatPacificFollowUp } from '@/lib/pacific-time';
 import { readPages } from '@/lib/supabase/read-pages';
 import { leadQueues, leadStages } from '@/lib/sales-labels';
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { LeadCheckbox, LeadSelection } from '@/components/hot-leads/lead-selection';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
@@ -15,13 +14,6 @@ function getSortLabel(sort: SortMode) {
   if (sort === 'newest_created') return 'Newest created';
   if (sort === 'stale_followups') return 'Stale follow-ups';
   return 'Next follow-up soonest';
-}
-
-function getStatusChip(status: string) {
-  if (status === 'pending' || status === 'scheduled') return 'bg-amber-50 text-amber-900';
-  if (status === 'contacted') return 'bg-blue-50 text-blue-900';
-  if (status === 'stale') return 'bg-slate-100 text-slate-700';
-  return 'bg-emerald-50 text-emerald-900';
 }
 
 export default async function HotLeadsPage({
@@ -56,7 +48,7 @@ export default async function HotLeadsPage({
   else if (view === 'lost') query = query.eq('sales_lost', true);
   else if (view === 'review' && isAdmin) query = query.eq('sales_review', true);
   else if (view !== 'all' || !isAdmin) query = query.is('archived_at', null).is('converted_at', null).eq('sales_lost', false).eq('sales_review', false);
-  if (view === 'active' && searchParams.test !== 'include') query = query.eq('sales_test', false);
+  if (view === 'active' && (!isAdmin || searchParams.test !== 'include')) query = query.eq('sales_test', false);
   if (searchParams.stage === 'waiting') query = query.in('sales_stage', Object.keys(leadStages).filter(stage => stage !== 'interested'));
   else if (searchParams.stage && Object.hasOwn(leadStages, searchParams.stage)) query = query.eq('sales_stage', searchParams.stage);
   if (profile.role === 'rep') query = query.eq('assigned_rep_id', profile.id);
@@ -90,75 +82,92 @@ export default async function HotLeadsPage({
     : { data: [] };
   const assignedRepNameById = new Map((assignedRepProfiles ?? []).map((repProfile) => [repProfile.id, repProfile.full_name ?? null]));
 
-  const today = pacificDate(new Date());
-  if (searchParams.due === 'today') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today);
+  const now = new Date();
+  if (searchParams.due === 'today' || searchParams.due === 'overdue') {
+    hotLeads = hotLeads.filter(lead => lead.next_follow_up_date
+      && followUpBucket(lead.next_follow_up_date, now, lead.created_at) === searchParams.due);
   }
-  if (searchParams.due === 'overdue') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < Date.now());
+  if (searchParams.due === 'unscheduled') {
+    hotLeads = hotLeads.filter(lead => !lead.next_follow_up_date);
   }
   if (searchParams.due === 'underwriting') {
     hotLeads = hotLeads.filter((lead) => lead.follow_up_status === 'scheduled' || /underwriting|docs requested/i.test(lead.outcome_tag ?? ''));
   }
   if (sort === 'stale_followups') {
-    const now = Date.now();
     hotLeads = hotLeads
-      .filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < now)
+      .filter((lead) => lead.next_follow_up_date && followUpBucket(lead.next_follow_up_date, now, lead.created_at) === 'overdue')
       .sort((a, b) => new Date(a.next_follow_up_date).getTime() - new Date(b.next_follow_up_date).getTime());
   }
 
+  const currentFilters = new URLSearchParams(Object.entries(searchParams).filter((entry): entry is [string, string] => typeof entry[1] === 'string')).toString();
   const table = (
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-[hsl(var(--panel))] text-left">
-              <tr>
-                {isAdmin && <th scope="col" className="px-3 py-[14px]">Select</th>}
-                <th className="px-3 py-[14px]">Business</th><th className="px-3 py-[14px]">Owner</th><th className="px-3 py-[14px]">Phone</th><th className="px-3 py-[14px]">Email</th>
-                <th className="px-3 py-[14px]">Assigned Rep</th><th className="px-3 py-[14px]">Follow-up Status</th><th className="px-3 py-[14px]">Next Follow-up</th><th className="px-3 py-[14px]">Outcome</th><th className="px-3 py-[14px]">Notes Preview</th>
-              </tr>
-            </thead>
-            <tbody>
-              {hotLeads.map((lead) => (
-                <tr key={lead.id} className="border-t border-border/80 odd:bg-slate-50/70 hover:border-l-2 hover:border-l-primary hover:bg-[hsl(var(--row-hover))]">
-                  {isAdmin && <td className="px-3"><LeadCheckbox lead={{ id: lead.id, name: lead.business_name }} /></td>}
-                  <td className="px-3 py-[14px]"><Link href={`/hot-leads/${lead.id}`} className="font-medium text-foreground hover:text-primary">{lead.business_name}</Link></td>
-                  <td className="px-3 py-[14px]">{lead.owner_name}</td>
-                  <td className="mono-data px-3 py-[14px]">{lead.phone || '—'}</td>
-                  <td className="mono-data px-3 py-[14px]">{lead.email || '—'}</td>
-                  <td className="px-3 py-[14px]">
-                    {(lead.assigned_rep_id ? assignedRepNameById.get(lead.assigned_rep_id) : null)
-                      ? <Badge className="bg-slate-100 text-slate-700">{assignedRepNameById.get(lead.assigned_rep_id as string)}</Badge>
-                      : <span className="text-muted-foreground">Unassigned</span>}
-                  </td>
-                  <td className="px-3 py-[14px]"><span className={`chip inline-flex rounded-full px-2 py-1 ${getStatusChip(lead.follow_up_status ?? '')}`}>{lead.follow_up_status || 'ready'}</span></td>
-                  <td className="mono-data px-3 py-[14px]">{lead.next_follow_up_date ? formatPacificDateTime(lead.next_follow_up_date) : '—'}</td>
-                  <td className="mono-data px-3 py-[14px]">{lead.sales_review ? 'Review conversion' : lead.converted_at ? 'Converted' : lead.sales_lost ? 'Lost' : lead.sales_test ? 'Test record' : (leadStages[lead.sales_stage as keyof typeof leadStages] ?? 'Interested')}</td>
-                  <td className="max-w-xs truncate px-3 py-[14px] text-muted-foreground">{lead.notes || '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[760px] table-fixed text-sm">
+        <thead className="sticky top-0 bg-muted text-left text-xs">
+          <tr>
+            {isAdmin && <th scope="col" className="w-10 px-3 py-3"><span className="sr-only">Select</span></th>}
+            <th scope="col" className="w-[24%] px-3 py-3">Business / contact</th>
+            <th scope="col" className="w-32 px-3 py-3">Phone</th>
+            <th scope="col" className="w-[17%] px-3 py-3">Stage</th>
+            <th scope="col" className="w-40 px-3 py-3">Next follow-up</th>
+            <th scope="col" className="w-28 px-3 py-3">Last contact</th>
+            {isAdmin && <th scope="col" className="w-28 px-3 py-3">Assigned rep</th>}
+            <th scope="col" className="px-3 py-3">Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {hotLeads.map(lead => {
+            const href = `/hot-leads/${lead.id}${currentFilters ? '?from=' + encodeURIComponent(currentFilters) : ''}`;
+            const stage = lead.archived_at ? 'Archived' : lead.sales_review ? 'Review conversion'
+              : lead.converted_at ? 'Converted' : lead.sales_lost ? 'Lost'
+              : leadStages[lead.sales_stage as keyof typeof leadStages] ?? 'Interested';
+            return <tr key={lead.id} className="h-14 border-t border-border hover:bg-muted/40">
+              {isAdmin && <td className="px-3"><LeadCheckbox lead={{ id: lead.id, name: lead.business_name }} /></td>}
+              <td className="px-3 py-2">
+                <Link href={href} title={lead.business_name} className="block truncate font-semibold text-primary hover:underline">{lead.business_name}</Link>
+                <p className="truncate text-xs text-muted-foreground" title={lead.owner_name}>{lead.owner_name}</p>
+              </td>
+              <td className="whitespace-nowrap px-3 tabular-nums">{lead.phone || '—'}</td>
+              <td className="px-3 text-xs">{stage}{lead.sales_test && <span className="block text-muted-foreground">Test record</span>}</td>
+              <td className="whitespace-nowrap px-3 text-xs tabular-nums">
+                {lead.next_follow_up_date ? <Link href={href + '#sales-actions'} className="hover:underline">{formatPacificFollowUp(lead.next_follow_up_date, lead.created_at)}</Link> : '—'}
+              </td>
+              <td className="whitespace-nowrap px-3 text-xs tabular-nums">{lead.last_contact_date || '—'}</td>
+              {isAdmin && <td className="truncate px-3 text-xs">{assignedRepNameById.get(lead.assigned_rep_id ?? '') ?? 'Unassigned'}</td>}
+              <td className="px-3 text-xs text-muted-foreground">
+                <Link href={href} className="block truncate hover:underline" title={lead.notes || undefined}>{lead.notes || '—'}</Link>
+              </td>
+            </tr>;
+          })}
+        </tbody>
+      </table>
+    </div>
   );
+
 
   return (
     <div className="space-y-4">
       {error && <p role="alert" className="text-sm text-red-800">Could not load the selected lead view.</p>}
 
       <div className="space-y-3 rounded-xl border border-border bg-[hsl(var(--panel))] p-4">
-        <p className="tracked-label text-muted-foreground">Operations / Live Pipeline</p>
+
         <div className="flex items-end justify-between gap-4">
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-3xl font-semibold">Hot Leads / Tasks</h1>
+            <h1 className="text-2xl font-semibold">Hot Leads</h1>
             <span className="rounded-full border border-border px-2.5 py-1 text-xs tabular text-muted-foreground">{countError ? 'Count unavailable' : `${activeCount ?? 0} active`}</span>
           </div>
           <Link href="/hot-leads/new" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">New lead</Link>
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {Object.entries(leadQueues).filter(([id]) => isAdmin || !['review','all'].includes(id)).map(([id, label]) =>
+          {Object.entries(leadQueues).filter(([id]) => isAdmin || !['review','all','archived'].includes(id)).map(([id, label]) =>
             <Link key={id} href={`/hot-leads?view=${id}`} aria-current={view === id ? 'page' : undefined}
               className="rounded-full border border-border px-3 py-1.5 aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground">{label}</Link>)}
           {isAdmin && <Link href={`/hot-leads?rep=${profile.id}`} className="rounded-full border border-border px-3 py-1.5">Mine</Link>}
           {isAdmin && <Link href="/hot-leads?rep=unassigned" className="rounded-full border border-border px-3 py-1.5">Unassigned</Link>}
-          <Link href="/hot-leads?sort=stale_followups" className="rounded-full border border-border px-3 py-1.5">Stale</Link>
+          <Link href="/hot-leads?due=today" className="rounded-full border border-border px-3 py-1.5">Due today</Link>
+          <Link href="/hot-leads?due=overdue" className="rounded-full border border-border px-3 py-1.5">Overdue</Link>
+          <Link href="/hot-leads?due=unscheduled" className="rounded-full border border-border px-3 py-1.5">No next action</Link>
+          <Link href="/hot-leads?stage=waiting" className="rounded-full border border-border px-3 py-1.5">Waiting for documents</Link>
         </div>
       </div>
 
@@ -192,8 +201,9 @@ export default async function HotLeadsPage({
                 </option>
               ))}
             </select>) : null}
-          {view === 'active' && <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="test" value="include" defaultChecked={searchParams.test === 'include'} />Include test leads</label>}
+          {isAdmin && view === 'active' && <label className="flex items-center gap-1 text-xs"><input type="checkbox" name="test" value="include" defaultChecked={searchParams.test === 'include'} />Include test leads</label>}
           <button className="rounded-full border border-border px-3 py-2 text-xs">Apply filters</button>
+          <Link href="/hot-leads" className="px-2 text-xs text-primary hover:underline">Clear filters</Link>
         </form>
       </Card>
 

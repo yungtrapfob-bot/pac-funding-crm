@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole, requireUser } from "@/lib/auth";
-import { pacificDate, pacificInputValue, parsePacificInput } from "@/lib/pacific-time";
+import { pacificInputValue, parsePacificInput } from "@/lib/pacific-time";
 import { PIPELINE_STAGES } from "@/lib/utils";
 
 const followUpStatusSchema = z.enum([
@@ -18,10 +18,10 @@ const followUpStatusSchema = z.enum([
 const dealStageSchema = z.enum(PIPELINE_STAGES);
 
 const hotLeadSchema = z.object({
-  business_name: z.string().min(2),
-  owner_name: z.string().min(2),
-  phone: z.string().min(7),
-  email: z.string().email(),
+  business_name: z.string().trim().min(2).max(200),
+  owner_name: z.string().trim().min(2).max(200),
+  phone: z.string().trim().max(40).refine(value => !value || value.replace(/\D/g, '').length >= 7, 'Enter a valid phone number.'),
+  email: z.union([z.literal(''), z.email()]).transform(value => value.toLowerCase()),
   industry: z.string().optional().default(""),
   monthly_revenue: z.coerce.number().nonnegative().optional().default(0),
   time_in_business_months: z.coerce
@@ -33,16 +33,17 @@ const hotLeadSchema = z.object({
   positions: z.coerce.number().nonnegative().optional().default(0),
   nsf_count: z.coerce.number().nonnegative().optional().default(0),
   deposits: z.coerce.number().nonnegative().optional().default(0),
-  fico: z.preprocess((value) => value === "" ? undefined : value, z.coerce.number().min(300).max(850).default(300)),
-  notes: z.string().optional(),
+  fico: z.preprocess(value => value === "" ? undefined : value, z.coerce.number().min(300).max(850).optional()),
+  notes: z.string().trim().max(3000).optional(),
   next_follow_up_date: z.string().optional(),
   follow_up_status: followUpStatusSchema.default("pending"),
   outcome_tag: z.string().optional(),
-});
+}).refine(lead => lead.phone || lead.email, { path: ['phone'], message: 'Enter a phone number or email address.' });
 
 export type HotLeadFormState = {
   status: "idle" | "error";
   message?: string;
+  duplicate?: boolean;
   fieldErrors?: Record<string, string[] | undefined>;
 };
 
@@ -85,7 +86,8 @@ export async function createHotLead(
   formData: FormData,
 ): Promise<HotLeadFormState> {
   const supabase = await createClient();
-  const assignedRepId = await resolveProfileIdForUser();
+  const { profile } = await requireUser();
+  const assignedRepId = profile.id;
   const parsed = hotLeadSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success)
     return {
@@ -99,16 +101,31 @@ export async function createHotLead(
   if (next_follow_up_date && !followUpAt) {
     return { status: "error", message: "Choose a valid Pacific follow-up date and time.", fieldErrors: { next_follow_up_date: ["This time does not exist in Pacific time."] } };
   }
-  const nowIso = new Date().toISOString();
+  const selectedRep = String(formData.get("assigned_rep_id") ?? "");
+  let assignedTo = assignedRepId;
+  if (profile.role === 'admin' && selectedRep && selectedRep !== assignedRepId) {
+    if (!z.guid().safeParse(selectedRep).success) return { status: 'error', message: 'Choose an active sales rep.' };
+    const { data: rep } = await supabase.from('profiles').select('id').eq('id', selectedRep).eq('role', 'rep').eq('is_active', true).maybeSingle();
+    if (!rep) return { status: 'error', message: 'Choose an active sales rep.' };
+    assignedTo = rep.id;
+  }
+  const { data: duplicate, error: duplicateError } = await supabase.rpc('crm_possible_duplicate_lead', {
+    contact_phone: rest.phone, contact_email: rest.email,
+  });
+  if (duplicateError) return { status: 'error', message: 'Could not check for duplicate leads. Try again.' };
+  if (duplicate && formData.get('confirm_duplicate') !== 'yes') {
+    return { status: 'error', duplicate: true, message: 'A lead you can access has this phone number or email. Confirm if this should be a separate opportunity.' };
+  }
 
+  const nowIso = new Date().toISOString();
   const { data: lead, error } = await supabase
     .from("hot_leads")
     .insert({
       ...rest,
       notes: notes ?? null,
       next_follow_up_date: followUpAt,
-      assigned_rep_id: assignedRepId,
-      last_contact_date: pacificDate(nowIso),
+      assigned_rep_id: assignedTo,
+      follow_up_status: followUpAt ? 'scheduled' : 'pending',
     })
     .select("id")
     .single();
@@ -116,7 +133,7 @@ export async function createHotLead(
   if (error || !lead)
     return {
       status: "error",
-      message: error?.message ?? "Failed to create lead.",
+      message: "Could not create the lead. Check the fields and try again.",
     };
 
   const noteText = (notes ?? "").trim();
@@ -177,7 +194,6 @@ export async function updateHotLead(formData: FormData) {
       follow_up_status: followUpStatusSchema.parse(p.follow_up_status),
       next_follow_up_date: followUpAt,
       outcome_tag: p.outcome_tag,
-      last_contact_date: pacificDate(new Date()),
     })
     .eq("id", leadId).is("archived_at", null).is("converted_at", null).eq("sales_lost", false).eq("sales_review", false);
 
@@ -529,10 +545,11 @@ export async function updateDealStage(formData: FormData) {
   const p = Object.fromEntries(formData);
   const dealId = String(p.deal_id);
   const nextStage = dealStageSchema.parse(String(p.current_stage));
+  if (nextStage === 'Funded' && p.confirm_funding !== 'yes') redirect(`/deals/${dealId}?saved=funding_error#stage-controls`);
   const { error } = await supabase.rpc("crm_set_sales_deal_stage", {
     record_id: dealId, stage_label: nextStage,
   });
-  if (error) redirect(`/deals/${dealId}?saved=stage_error#sales-actions`);
+  if (error) redirect(`/deals/${dealId}?saved=${nextStage === 'Funded' ? 'funding_error#stage-controls' : 'stage_error#stage-controls'}`);
   revalidatePath(`/deals/${dealId}`);
   revalidatePath("/admin/pipeline");
   revalidatePath("/deals");

@@ -1,3 +1,5 @@
+import { DealStageControls } from '@/components/deals/deal-stage-controls';
+import { ApplicationDocumentReview, UploadDocumentsButton } from '@/components/deals/application-document-review';
 import { SalesActions } from '@/components/sales/sales-actions';
 import { SalesTimeline } from '@/components/sales/timeline';
 import { FunderTracker } from '@/components/sales/funder-tracker';
@@ -9,7 +11,6 @@ import {
   addDealDocuments,
   selectOffer,
   updateDealDetails,
-  updateDealStage,
 } from "@/actions/deals";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,6 @@ import { requireUser } from "@/lib/auth";
 import {
   addBusinessDays,
   calculateFiftyPercentPaidDate,
-  PIPELINE_STAGES,
   toUiPipelineStage,
 } from "@/lib/utils";
 import Link from "next/link";
@@ -82,7 +82,7 @@ export default async function DealDetailPage({
   const deal = dealRows?.[0] ?? null;
   if (!deal) return <p>Deal not found.</p>;
   const [{ data: queue }, { data: processors }] = await Promise.all([
-    supabase.from('crm_sales_deal_queue').select('queue_stage').eq('id',deal.id).maybeSingle(),
+    supabase.from('crm_sales_deal_queue').select('queue_stage,has_documents').eq('id',deal.id).maybeSingle(),
     isAdmin ? supabase.from('profiles').select('id,full_name').eq('is_active',true).order('full_name') : {data:[]},
   ]);
   const queueStage = queue?.queue_stage ?? 'processing';
@@ -202,7 +202,7 @@ export default async function DealDetailPage({
       <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{deal.business_name}</h1>
-          <Badge>{dealStages[queueStage]}{deal.sales_test && ' · Test record'}</Badge>
+          <Badge>{deal.archived_at ? 'Archived · ' : ''}{dealStages[queueStage]}{deal.sales_test && ' · Test record'}</Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           Assigned Internal Rep:{" "}
@@ -254,26 +254,14 @@ export default async function DealDetailPage({
         </Card>
       </div>
 
-      {isAdmin ? (
-        <Card>
-          <h2 className="mb-2 text-lg font-medium">Stage Movement</h2>
-          <form action={updateDealStage} className="flex gap-2">
-            <input type="hidden" name="deal_id" value={deal.id} />
-            <select
-              name="current_stage"
-              defaultValue={toUiPipelineStage(deal.current_stage)}
-              className="rounded-md border px-3 py-2 text-sm"
-            >
-              {PIPELINE_STAGES.filter(stage => stage !== 'KIF').map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <Button type="submit">Move Stage</Button>
-          </form>
+      {isAdmin && !deal.archived_at && !['funded','lost'].includes(queueStage) && (
+        <Card id="stage-controls">
+          <h2 className="mb-2 text-lg font-medium">Stage movement</h2>
+          {searchParams?.saved === 'stage_error' && <p role="alert" className="mb-2 text-sm text-red-800">Could not change the deal stage. Check its current status.</p>}
+          {searchParams?.saved === 'funding_error' && <p role="alert" className="mb-2 text-sm text-red-800">Could not record funding. Check the saved funding date, amount, gross commission, and document review.</p>}
+          <DealStageControls id={deal.id} stage={toUiPipelineStage(deal.current_stage)} />
         </Card>
-      ) : null}
+      )}
 
       <Card>
         <h2 className="mb-2 text-lg font-medium">
@@ -289,6 +277,7 @@ export default async function DealDetailPage({
               <Input
                 type="date"
                 name="funded_date"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.funded_date ?? ""}
               />
             </Field>
@@ -297,6 +286,7 @@ export default async function DealDetailPage({
                 type="number"
                 step="0.01"
                 name="funded_amount"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.funded_amount ?? 0}
               />
             </Field>
@@ -305,9 +295,11 @@ export default async function DealDetailPage({
                 type="number"
                 step="0.01"
                 name="gross_commission"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.gross_commission ?? 0}
               />
             </Field>
+            {queueStage === 'funded' && <p className="text-xs text-muted-foreground md:col-span-3">Funded financial terms are protected. Notes can still be updated.</p>}
             <Field label="Internal Notes">
               <textarea
                 name="internal_notes"
@@ -511,10 +503,9 @@ export default async function DealDetailPage({
 
       <Card id="sales-actions">
         <h2 className="mb-2 text-lg font-medium">Next action</h2>
-        {searchParams?.saved === 'stage_error' && <p role="alert" className="text-sm text-red-800">Could not change the pipeline stage. Use Mark lost or Reopen when applicable.</p>}
         {deal.sales_follow_up_at && <p className="mb-2 text-sm">{deal.sales_next_action} · {formatPacificDateTime(deal.sales_follow_up_at)} (Pacific)</p>}
         {deal.converted_from_hot_lead_id && <Link className="mb-2 block text-primary underline" href={`/hot-leads/${deal.converted_from_hot_lead_id}`}>Originating lead and activity</Link>}
-        <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={queueStage === 'funded'}
+        <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={Boolean(deal.archived_at) || queueStage === 'funded'}
           hasTask={Boolean(deal.sales_follow_up_at)} source={deal.sales_source ?? undefined} isTest={Boolean(deal.sales_test)}
           processors={(processors ?? []).map(p => ({id:p.id,name:p.full_name ?? p.id}))} />
       </Card>
@@ -528,18 +519,22 @@ export default async function DealDetailPage({
         {searchParams?.upload === 'incomplete' && <p role="alert" className="mb-2 text-sm text-red-800">The application is incomplete. Check the list and attach any missing documents below.</p>}
         {searchParams?.upload === 'missing' && <p role="alert" className="mb-2 text-sm text-red-800">Choose a document to upload.</p>}
         {searchParams?.upload === 'complete' && <p role="status" className="mb-2 text-sm text-emerald-800">Documents uploaded.</p>}
-        <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">
+        {deal.application_review_required && deal.application_reviewed_at && <p className="mb-2 text-sm text-emerald-800">Document review complete.</p>}
+        {deal.application_review_required && !deal.application_reviewed_at && queue?.has_documents && !deal.archived_at
+          && queueStage === 'missing_documents' && <ApplicationDocumentReview id={deal.id} admin={isAdmin} />}
+        {!deal.archived_at && <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">
+          <input type="hidden" name="deal_id" value={deal.id} />
           <label>Signed application<Input type="file" name="application_file" /></label>
           <label>Bank statements<Input type="file" name="bank_statements" multiple /></label>
-          <Button type="submit">Upload documents</Button>
-        </form>
+          <UploadDocumentsButton />
+        </form>}
 
         <div className="space-y-2 text-sm">
           {fileRows.length ? (
             fileRows.map((f) => (
               <div key={f.id} className="rounded border p-3">
-                <p className="font-medium">{f.file_type}</p>
-                <p className="break-all text-muted-foreground">{f.path}</p>
+                <p className="font-medium">{f.file_type === 'application' ? 'Application' : f.file_type === 'statement' ? 'Statement' : f.file_type}</p>
+                <p className="break-all text-muted-foreground">{f.path.split('/').at(-1)?.replace(/^[0-9a-f-]{36}-/i, '')}</p>
                 <Link href={`/api/deal-files/${f.id}`} prefetch={false} className="mt-2 inline-block text-primary underline">
                   Download
                 </Link>
