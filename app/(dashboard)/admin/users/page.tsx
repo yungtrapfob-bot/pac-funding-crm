@@ -1,3 +1,4 @@
+import { formatPacificDate } from '@/lib/pacific-time';
 import { CreateUserForm } from '@/components/admin/create-user-form';
 import { ManageRepForm } from '@/components/admin/manage-rep-form';
 import { requireRole } from '@/lib/auth';
@@ -30,7 +31,7 @@ export default async function UsersPage() {
                 <td className="p-2">{u.email}</td>
                 <td className="p-2 uppercase">{u.role}</td>
                 <td className="p-2">{u.is_active ? "Active" : "Inactive"}</td>
-                <td className="p-2">{new Date(u.created_at).toLocaleDateString()}</td>
+                <td className="p-2">{formatPacificDate(u.created_at)}</td>
                 <td className="p-2">{u.role === 'rep' && <ManageRepForm
                   id={u.id}
                   name={u.full_name ?? u.email ?? 'Rep'}

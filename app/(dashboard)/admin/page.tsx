@@ -1,3 +1,4 @@
+import { formatPacificDate } from '@/lib/pacific-time';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Card } from '@/components/ui/card';
 import { requireRole } from '@/lib/auth';
@@ -132,7 +133,7 @@ export default async function AdminDashboardPage() {
             <tbody>
               {!repRows.length ? <tr><td className="p-3 text-muted-foreground" colSpan={11}>No rep activity yet.</td></tr> : repRows.map((row) => (
                 <tr key={row.repId} className="border-t border-border/80 hover:bg-muted/20">
-                  <td className="p-3 font-medium"><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">{row.repName}</Link></td><td className="p-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">{row.hotLeads}</Link></td><td className="p-3">{row.appsSubmitted}</td><td className="p-3">{row.underwriting}</td><td className="p-3">{row.offers}</td><td className="p-3">{row.contractsOut}</td><td className="p-3">{row.fundedDeals}</td><td className="p-3">${row.totalFundedAmount.toLocaleString()}</td><td className="p-3">${row.openApprovalAmount.toLocaleString()}</td><td className="p-3">{row.lastActivity ? new Date(row.lastActivity).toLocaleDateString() : '—'}</td><td className="p-3"><div className="flex gap-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">Hot leads</Link><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">Deals</Link></div></td>
+                  <td className="p-3 font-medium"><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">{row.repName}</Link></td><td className="p-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">{row.hotLeads}</Link></td><td className="p-3">{row.appsSubmitted}</td><td className="p-3">{row.underwriting}</td><td className="p-3">{row.offers}</td><td className="p-3">{row.contractsOut}</td><td className="p-3">{row.fundedDeals}</td><td className="p-3">${row.totalFundedAmount.toLocaleString()}</td><td className="p-3">${row.openApprovalAmount.toLocaleString()}</td><td className="p-3">{row.lastActivity ? formatPacificDate(row.lastActivity) : '—'}</td><td className="p-3"><div className="flex gap-3"><Link href={`/hot-leads?rep=${row.repId}`} className="text-primary hover:underline">Hot leads</Link><Link href={`/deals?rep=${row.repId}`} className="text-primary hover:underline">Deals</Link></div></td>
                 </tr>
               ))}
             </tbody>

@@ -78,7 +78,7 @@ export async function manageRepUserAction(
     revalidatePath("/hot-leads");
     revalidatePath("/admin");
     revalidatePath("/dashboard");
-    return { status: "success", message: `${count} active leads reassigned.` };
+    return { status: "success", message: `${count} active ${count === 1 ? "lead" : "leads"} reassigned.` };
   }
 
   const admin = createAdminClient();

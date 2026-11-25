@@ -10,6 +10,8 @@ const localDateTime = new Intl.DateTimeFormat('en-CA', {
   hourCycle: 'h23',
 });
 
+const displayDate = new Intl.DateTimeFormat('en-US', { timeZone, dateStyle: 'medium' });
+
 const displayDateTime = new Intl.DateTimeFormat('en-US', {
   timeZone,
   dateStyle: 'medium',
@@ -24,6 +26,10 @@ export function pacificInputValue(value: string | Date) {
 
 export function pacificDate(value: string | Date) {
   return pacificInputValue(value).slice(0, 10);
+}
+
+export function formatPacificDate(value: string) {
+  return displayDate.format(new Date(value));
 }
 
 export function formatPacificDateTime(value: string) {
