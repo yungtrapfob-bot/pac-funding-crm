@@ -8,7 +8,8 @@ import { createClient } from '@/lib/supabase/server';
 
 import { formatPacificDateTime, pacificInputValue } from '@/lib/pacific-time';
 
-export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string } }) {
+export default async function HotLeadDetail({ params: pendingParams, searchParams: pendingSearchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; created?: string }> }) {
+  const [params, searchParams] = await Promise.all([pendingParams, pendingSearchParams]);
   const { profile } = await requireUser();
   const supabase = await createClient();
   let leadQuery = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)').eq('id', params.id);

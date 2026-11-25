@@ -1,7 +1,7 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useFormStatus } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { manageHotLeads, type ManageLeadsState } from '@/actions/deals';
 
@@ -41,7 +41,7 @@ export function LeadSelection({ leads, children }: { leads: Lead[]; children: Re
   const router = useRouter();
   const [ids, setIds] = useState<string[]>([]);
   const [operation, setOperation] = useState<Operation | null>(null);
-  const [state, action] = useFormState<ManageLeadsState, FormData>(manageHotLeads, { status: 'idle' });
+  const [state, action] = useActionState<ManageLeadsState, FormData>(manageHotLeads, { status: 'idle' });
   const selected = leads.filter((lead) => ids.includes(lead.id));
 
   useEffect(() => {

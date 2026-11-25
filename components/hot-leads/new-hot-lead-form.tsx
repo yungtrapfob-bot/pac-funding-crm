@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { createHotLead, type HotLeadFormState } from '@/actions/deals';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,7 @@ function ErrorText({ message }: { message?: string[] }) {
 }
 
 export function NewHotLeadForm() {
-  const [state, formAction] = useFormState(createHotLead, initialState);
+  const [state, formAction] = useActionState(createHotLead, initialState);
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-3 md:grid-cols-2">

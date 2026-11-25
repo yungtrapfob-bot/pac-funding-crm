@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, useState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { manageRepUserAction } from '@/actions/admin-users';
 import { initialCreateUserFormState } from '@/actions/admin-users-form-state';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,7 @@ export function ManageRepForm({ id, name, active, recipients }: {
   recipients: { id: string; name: string }[];
 }) {
   const [operation, setOperation] = useState('');
-  const [state, action] = useFormState(manageRepUserAction, initialCreateUserFormState);
+  const [state, action] = useActionState(manageRepUserAction, initialCreateUserFormState);
 
   return (
     <form

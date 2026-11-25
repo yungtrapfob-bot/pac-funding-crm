@@ -1,7 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, type ReactNode } from 'react';
+import { useFormStatus } from 'react-dom';
 import { submitHotLeadConversion, type ConvertLeadFormState } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,10 +11,10 @@ const initialState: ConvertLeadFormState = { status: 'idle' };
 type LeadIntake = { id: string; business_name: string | null; owner_name: string | null; phone: string | null; email: string | null; industry: string | null; monthly_revenue: number | null; requested_amount: number | null; time_in_business_months: number | null; state: string | null; positions: number | null; nsf_count: number | null; deposits: number | null; fico: number | null; notes: string | null; };
 
 export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
-  const [state, formAction] = useFormState(submitHotLeadConversion, initialState);
+  const [state, formAction] = useActionState(submitHotLeadConversion, initialState);
 
   return (
-    <form action={formAction} className="space-y-5" encType="multipart/form-data">
+    <form action={formAction} className="space-y-5">
       <input type="hidden" name="hot_lead_id" value={lead.id} />
 
       <section className="space-y-3">

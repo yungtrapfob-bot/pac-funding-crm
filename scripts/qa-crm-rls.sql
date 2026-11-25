@@ -165,4 +165,22 @@ begin
   assert not exists (select 1 from public.commissions where deal_id = 'c0000000-0000-4000-8000-000000000001'), 'Inactive commission read';
 end $$;
 
+
+reset role;
+update public.profiles set is_active = true where id = 'a0000000-0000-4000-8000-000000000002';
+insert into auth.sessions (id, user_id, created_at, updated_at) values
+  ('e0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000002', now() - interval '1 minute', now()),
+  ('e0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002', now() + interval '1 minute', now());
+set local role authenticated;
+select set_config('request.jwt.claims', '{"session_id":"e0000000-0000-4000-8000-000000000001"}', true);
+do $$
+begin
+  assert public.crm_role() is null, 'Reactivation must not restore old sessions';
+end $$;
+select set_config('request.jwt.claims', '{"session_id":"e0000000-0000-4000-8000-000000000002"}', true);
+do $$
+begin
+  assert public.crm_role() = 'rep', 'Reactivated rep can create a new session';
+end $$;
+
 rollback;

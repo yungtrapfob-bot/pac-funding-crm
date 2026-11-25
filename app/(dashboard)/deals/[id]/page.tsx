@@ -55,12 +55,13 @@ function formatDisplayDate(value?: string | null) {
 }
 
 export default async function DealDetailPage({
-  params,
-  searchParams,
+  params: pendingParams,
+  searchParams: pendingSearchParams,
 }: {
-  params: { id: string };
-  searchParams?: { saved?: string; context?: string; offer_error?: string; upload?: string };
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ saved?: string; context?: string; offer_error?: string; upload?: string }>;
 }) {
+  const [params, searchParams] = await Promise.all([pendingParams, pendingSearchParams]);
   const { profile } = await requireUser();
   const isAdmin = profile.role === "admin";
   const supabase = await createClient();

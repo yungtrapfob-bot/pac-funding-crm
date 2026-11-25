@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
+export async function GET(_: Request, { params: pendingParams }: { params: Promise<{ id: string }> }) {
+  const params = await pendingParams;
   const id = z.string().uuid().safeParse(params.id);
   if (!id.success) return new Response(null, { status: 404 });
 
@@ -15,14 +16,16 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     .select('deal_id,path').eq('id', id.data).maybeSingle();
   if (error || !file) return new Response(null, { status: 404 });
   const [directory, ...nameParts] = file.path.split('/');
-  if (directory !== file.deal_id || nameParts.length !== 1 || !nameParts[0]) {
+  const safeSegment = /^[a-zA-Z0-9._-]+$/;
+  if (directory !== file.deal_id || !nameParts.length ||
+      nameParts.some((part: string) => !safeSegment.test(part) || part === '.' || part === '..')) {
     return new Response(null, { status: 404 });
   }
 
   const { data: object, error: downloadError } = await createAdminClient().storage
     .from('deal-files').download(file.path);
   if (downloadError || !object) return new Response(null, { status: 404 });
-  const filename = nameParts[0].replace(/[^a-zA-Z0-9._-]/g, '_');
+  const filename = nameParts.at(-1);
   return new Response(object, {
     headers: {
       'Content-Type': 'application/octet-stream',

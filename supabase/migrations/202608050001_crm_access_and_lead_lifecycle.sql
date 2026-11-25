@@ -1,6 +1,7 @@
 begin;
 
 alter table public.profiles add column if not exists is_active boolean not null default true;
+alter table public.profiles add column if not exists sessions_revoked_at timestamptz;
 alter table public.hot_leads add column if not exists archived_at timestamptz;
 alter table public.hot_leads add column if not exists owner_profile_id uuid references public.profiles(id);
 alter table public.deals add column if not exists owner_profile_id uuid references public.profiles(id);
@@ -12,7 +13,16 @@ create or replace function public.crm_role()
 returns text
 language sql stable security definer set search_path = ''
 as $$
-  select role::text from public.profiles where id = auth.uid() and is_active
+  select p.role::text from public.profiles p
+  where p.id = auth.uid() and p.is_active
+    and (
+      p.sessions_revoked_at is null
+      or exists (
+        select 1 from auth.sessions s
+        where s.id = (auth.jwt() ->> 'session_id')::uuid
+          and s.user_id = p.id and s.created_at > p.sessions_revoked_at
+      )
+    )
 $$;
 revoke all on function public.crm_role() from public, anon, authenticated;
 grant execute on function public.crm_role() to authenticated;
@@ -37,6 +47,9 @@ begin
     end if;
   end if;
   if tg_op = 'DELETE' then return old; end if;
+  if old.is_active is distinct from new.is_active then
+    new.sessions_revoked_at := clock_timestamp();
+  end if;
   return new;
 end;
 $$;

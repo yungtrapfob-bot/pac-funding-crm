@@ -16,7 +16,8 @@ function extractRequestedAmountFromInternalNotes(value?: string | null) {
   return Number.isFinite(amount) ? amount : null;
 }
 
-export default async function AdminFundersPage({ searchParams }: { searchParams?: SearchParams }) {
+export default async function AdminFundersPage({ searchParams: pendingSearchParams }: { searchParams: Promise<SearchParams> }) {
+  const searchParams = await pendingSearchParams;
   await requireRole(['admin']);
   const supabase = await createClient();
   const [{ data: submissionConfigs, error: submissionConfigError }, fallbackImport, { data: dealRows }] = await Promise.all([

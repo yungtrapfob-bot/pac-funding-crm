@@ -1,6 +1,6 @@
 # Paragon Arm (v1 scaffold)
 
-Desktop-first internal CRM for Paragon Alternative Capital built with Next.js 14 App Router + Supabase.
+Desktop-first internal CRM for Paragon Alternative Capital built with Next.js 15 App Router + Supabase.
 
 ## Proposed file tree
 
@@ -60,7 +60,7 @@ supabase/
 
 1. Install dependencies:
    ```bash
-   npm install
+   npm ci
    ```
 2. Copy env:
    ```bash

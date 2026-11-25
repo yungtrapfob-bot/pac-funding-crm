@@ -17,7 +17,8 @@ const STAGE_FILTERS: Record<string, string[]> = {
   all_apps: []
 };
 
-export default async function DealsPage({ searchParams }: { searchParams: { q?: string; stage?: string; rep?: string } }) {
+export default async function DealsPage({ searchParams: pendingSearchParams }: { searchParams: Promise<{ q?: string; stage?: string; rep?: string }> }) {
+  const searchParams = await pendingSearchParams;
   const { profile } = await requireUser();
   const q = searchParams.q?.toLowerCase().trim() ?? '';
   const stage = searchParams.stage?.trim() ?? '';

@@ -23,10 +23,11 @@ function getStatusChip(status: string) {
 }
 
 export default async function HotLeadsPage({
-  searchParams
+  searchParams: pendingSearchParams
 }: {
-  searchParams: { q?: string; status?: string; sort?: string; outcome?: string; rep?: string; view?: string; due?: string };
+  searchParams: Promise<{ q?: string; status?: string; sort?: string; outcome?: string; rep?: string; view?: string; due?: string }>;
 }) {
+  const searchParams = await pendingSearchParams;
   const { profile } = await requireUser();
   const supabase = await createClient();
   const q = searchParams.q?.trim() ?? '';

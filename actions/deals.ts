@@ -91,7 +91,7 @@ export async function createHotLead(
     return {
       status: "error",
       message: "Please fix the highlighted fields.",
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
 
   const { next_follow_up_date, notes, ...rest } = parsed.data;
