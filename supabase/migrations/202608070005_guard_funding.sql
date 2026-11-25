@@ -1,16 +1,20 @@
 begin;
 
-create function public.crm_guard_funding_stage()
+create or replace function public.crm_guard_funding_stage()
 returns trigger language plpgsql set search_path = ''
 as $$
 begin
   -- The browser and authenticated API share the same stage safeguards.
-  if current_setting('role',true) is distinct from 'authenticated'
-    or new.current_stage is not distinct from old.current_stage then return new; end if;
-  if old.archived_at is not null then raise exception 'Restore this deal before changing its stage.'; end if;
-  if old.current_stage::text='Funded' then
-    raise exception 'A funded stage cannot be reversed through general stage controls.';
+  if current_setting('role',true) is distinct from 'authenticated' then return new; end if;
+  if old.current_stage::text='Funded' and (
+    new.current_stage is distinct from old.current_stage
+    or (new.funded_date,new.funded_amount,new.gross_commission,new.gross_psf)
+      is distinct from (old.funded_date,old.funded_amount,old.gross_commission,old.gross_psf)
+  ) then
+    raise exception 'Funded stage and financial terms are protected from general edits.';
   end if;
+  if new.current_stage is not distinct from old.current_stage then return new; end if;
+  if old.archived_at is not null then raise exception 'Restore this deal before changing its stage.'; end if;
   if new.current_stage::text='Funded' and (
     new.funded_date is null or new.funded_date>(now() at time zone 'America/Los_Angeles')::date
     or coalesce(new.funded_amount,0)<=0 or new.gross_commission is null or new.gross_commission<0
@@ -22,7 +26,9 @@ begin
 end;
 $$;
 revoke all on function public.crm_guard_funding_stage() from public, anon, authenticated;
-create trigger crm_guard_funding_stage before update of current_stage on public.deals
+drop trigger if exists crm_guard_funding_stage on public.deals;
+create trigger crm_guard_funding_stage
+  before update of current_stage, funded_date, funded_amount, gross_commission, gross_psf on public.deals
   for each row execute function public.crm_guard_funding_stage();
 
 commit;

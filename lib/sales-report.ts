@@ -10,6 +10,7 @@ export type SalesEvent = {
 };
 
 export type SalesLead = {
+  created_at?: string;
   id: string; business_name: string; assigned_rep_id: string | null; owner_profile_id: string | null;
   sales_source: string | null; sales_stage: string; sales_test: boolean; sales_lost: boolean; sales_review: boolean;
   archived_at: string | null; converted_at: string | null; next_follow_up_date: string | null; last_contact_date: string | null;

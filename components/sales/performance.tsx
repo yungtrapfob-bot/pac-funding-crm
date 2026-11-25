@@ -4,7 +4,7 @@ import { requireUser } from '@/lib/auth';
 import { readSalesData } from '@/lib/sales-data';
 import { buildOpportunities, eventWithin, firstContactMedian, funnelStages, highValueRequest, lastDealActivity, lastLoss, matchedConversionRows, milestoneMedian, milestonePair, needsHighValueReview, observed, precedingPeriod, reportDates, salesAttentionDays, stageEntered, type Milestone, type SalesOpportunity } from '@/lib/sales-report';
 import { dealStages, eventLabels, lossReasons } from '@/lib/sales-labels';
-import { formatPacificDate, formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
+import { followUpBucket, formatPacificDate, formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
 
 type Filters = { period?: string; from?: string; to?: string; asOf?: string; cohort?: string; rep?: string; attribution?: string; metric?: string; sort?: string };
 type Result = { label: string; value: string | number; rows: SalesOpportunity[]; milestone?: Milestone };
@@ -56,7 +56,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
   const loss = scoped.filter(row => lastLoss(row,dates));
   const due = scoped.filter(followup);
   const now = Date.now();
-  const overdue = due.filter(row => Date.parse(followup(row)!) < now);
+  const overdue = due.filter(row => followUpBucket(followup(row)!, new Date(now), row.deal ? undefined : row.lead?.created_at) === 'overdue');
   const views = new Map<string,Result>();
   const add = (key: string, label: string, rows: SalesOpportunity[], value: string | number = rows.length, milestone?: Milestone) => {
     views.set(key,{label,rows,value,milestone}); return key;

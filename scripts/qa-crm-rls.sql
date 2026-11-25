@@ -244,7 +244,13 @@ begin
     perform public.crm_set_sales_deal_stage(funded_id,'In Underwriting');
     raise exception 'Unexpected funded deal reversal';
   exception when raise_exception then
-    assert sqlerrm like 'A funded stage cannot be reversed%';
+    assert sqlerrm like 'Funded stage and financial terms are protected%';
+  end;
+  begin
+    update public.deals set gross_commission=1 where id=funded_id;
+    raise exception 'Unexpected funded financial edit';
+  exception when raise_exception then
+    assert sqlerrm like 'Funded stage and financial terms are protected%';
   end;
   select sum(commission_amount) into ledger_amount from public.commissions where deal_id=funded_id;
   assert ledger_amount=500, 'Existing solo ledger';

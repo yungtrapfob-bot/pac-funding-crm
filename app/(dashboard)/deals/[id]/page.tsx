@@ -277,6 +277,7 @@ export default async function DealDetailPage({
               <Input
                 type="date"
                 name="funded_date"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.funded_date ?? ""}
               />
             </Field>
@@ -285,6 +286,7 @@ export default async function DealDetailPage({
                 type="number"
                 step="0.01"
                 name="funded_amount"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.funded_amount ?? 0}
               />
             </Field>
@@ -293,9 +295,11 @@ export default async function DealDetailPage({
                 type="number"
                 step="0.01"
                 name="gross_commission"
+                readOnly={queueStage === 'funded'}
                 defaultValue={deal.gross_commission ?? 0}
               />
             </Field>
+            {queueStage === 'funded' && <p className="text-xs text-muted-foreground md:col-span-3">Funded financial terms are protected. Notes can still be updated.</p>}
             <Field label="Internal Notes">
               <textarea
                 name="internal_notes"

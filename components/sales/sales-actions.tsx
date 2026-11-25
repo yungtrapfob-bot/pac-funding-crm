@@ -6,6 +6,7 @@ import { recordSalesAction } from '@/actions/sales';
 import { callOutcomes, dealStages, leadStages, lossReasons } from '@/lib/sales-labels';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { pacificFollowUpPresets } from '@/lib/pacific-time';
 
 function Save() {
   const { pending } = useFormStatus();
@@ -17,8 +18,16 @@ export function SalesActions({ entity, id, admin, lost, closed = false, hasTask,
   source?: string; isTest: boolean; processors?: { id: string; name: string }[];
 }) {
   const [action, setAction] = useState('');
+  const [due, setDue] = useState('');
+  const [presets, setPresets] = useState<ReturnType<typeof pacificFollowUpPresets>>([]);
+  useEffect(() => setPresets(pacificFollowUpPresets()), []);
   const [state, submit, pending] = useActionState(recordSalesAction, { status: 'idle' });
-  useEffect(() => { if (state.status === 'success') setAction(''); }, [state]);
+  useEffect(() => {
+    if (state.status === 'success') {
+      setAction('');
+      setDue('');
+    }
+  }, [state]);
   const options: Record<string, string> = closed || lost ? (lost && (entity === 'lead' || admin) ? { reopened: 'Reopen opportunity' } : {}) : {
     call: 'Log call', text: 'Log text', email: 'Log email', note: 'Add note', schedule: 'Set next follow-up',
     ...(hasTask ? { task_completed: 'Complete follow-up' } : {}),
@@ -54,7 +63,7 @@ export function SalesActions({ entity, id, admin, lost, closed = false, hasTask,
           {Object.entries(callOutcomes).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
         </select>
       </label>}
-      <label className="grid gap-1 text-sm">Next follow-up (Pacific, optional)<Input name="due" type="datetime-local" /></label>
+      <label className="grid gap-1 text-sm">Next follow-up (Pacific, optional)<Input name="due" type="datetime-local" value={due} onChange={event => setDue(event.target.value)} /></label>
       {hasTask && <p className="text-xs text-muted-foreground sm:col-span-2">Saving contact completes the current follow-up.</p>}
     </div>}
     {action === 'lost' && <label className="grid gap-1 text-sm">Loss reason<select name="value" required className="rounded border border-border p-2">
@@ -66,7 +75,11 @@ export function SalesActions({ entity, id, admin, lost, closed = false, hasTask,
     </select></label>}
     {action === 'schedule' && <div className="grid gap-2 sm:grid-cols-2">
       {entity === 'deal' && <label className="grid gap-1 text-sm">Next action<Input name="value" maxLength={200} required /></label>}
-      <label className="grid gap-1 text-sm">Follow-up time (Pacific)<Input name="due" type="datetime-local" required /></label>
+      <label className="grid gap-1 text-sm">Follow-up time (Pacific)<Input name="due" type="datetime-local" value={due} onChange={event => setDue(event.target.value)} required /></label>
+    </div>}
+    {(contactAction || action === 'schedule') && <div className="flex flex-wrap gap-1.5" aria-label="Follow-up presets">
+      {presets.map(preset => <button type="button" key={preset.label} onClick={() => setDue(preset.value)}
+        className="rounded border border-border px-2 py-1 text-xs hover:bg-muted">{preset.label}</button>)}
     </div>}
     {action === 'submitted' && <label className="grid gap-1 text-sm">Funder name<Input name="value" maxLength={200} required /></label>}
     {action === 'source' && <label className="grid gap-1 text-sm">Lead source<Input name="value" defaultValue={source} maxLength={200} /></label>}

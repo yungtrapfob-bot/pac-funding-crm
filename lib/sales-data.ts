@@ -6,7 +6,7 @@ export async function readSalesData() {
   const supabase = await createClient();
   const [leads, deals, events, links, ledger, profiles] = await Promise.all([
     readPages<SalesLead>((from,to) => supabase.from('hot_leads')
-      .select('id,business_name,assigned_rep_id,owner_profile_id,sales_source,sales_stage,sales_test,sales_lost,sales_review,archived_at,converted_at,next_follow_up_date,last_contact_date').order('id').range(from,to)),
+      .select('id,business_name,created_at,assigned_rep_id,owner_profile_id,sales_source,sales_stage,sales_test,sales_lost,sales_review,archived_at,converted_at,next_follow_up_date,last_contact_date').order('id').range(from,to)),
     readPages<SalesDeal>((from,to) => supabase.from('crm_sales_deal_queue').select('*').order('id').range(from,to)),
     readPages<SalesEvent>((from,to) => supabase.from('crm_sales_events')
       .select('id,lead_id,deal_id,kind,occurred_at,origin_id,assigned_id,closer_id,processor_id,stage,reason,date_only')

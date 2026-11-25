@@ -11,7 +11,7 @@
    - [Explicit funding guard](../supabase/migrations/202608070005_guard_funding.sql)
 3. Run the complete [verification file](../supabase/release/v1-sales-floor-verify.sql). Every row should say PASS.
 4. Validate the matching application in staging with an administrator and two synthetic reps. Confirm follow-up, document upload, conversion, archive, protected funding history, and reports.
-5. After owner approval, repeat the preflight, migrations, and verification on production using its actual schema and a recoverable backup. Deploy the matching app only after verification. Check sign-in, dashboard and pipeline links, processing, and authorized read-only commission and document access.
+5. After owner approval, pause intake and funding during the production rollout. Repeat the preflight, migrations, and verification on production using its actual schema and a recoverable backup. Deploy the matching app only after verification. Check sign-in, dashboard and pipeline links, processing, and authorized read-only commission and document access before resuming sales activity.
 
 The migration files use transactions and rely on the previously applied Sales Performance schema. They do not rewrite existing merchant or financial rows. If an application rollback is needed, keep the additive archive column so its data survives. The previous web app can show archived deals in operational views. For function rollback, use the verified pre-change definitions from the backup. Permanent cleanup confirmations after launch require backup recovery if reversed.
 
@@ -26,3 +26,10 @@ The migration files use transactions and rely on the previously applied Sales Pe
 ## Admin cleanup
 
 Select the visible leads or deals you want to manage, choose an action, and click Review selection. The review shows record names and specific reasons for blocked records. Confirm only the eligible subset. Converted leads and deals with commercial history are suitable for archive. Recognized commissions stay in the historical ledger. Confirmed deletions record the administrator, record type, count, and timestamp without keeping deleted merchant details. Test designation is separate, and funded records or linked funded records are protected from reclassification.
+
+## Operational limits
+
+- Statement coverage is a human review. Use the documented admin exception for fewer than four verified months.
+- Bulk review is capped at 100 selected visible records. Duplicate warnings are advisory and respect the signed-in user's existing record visibility.
+- The ordinary deal workflow protects recorded financial terms. A funded correction requires an approved accounting procedure outside the general cleanup UI.
+- Legacy events and incomplete historical evidence are retained. The release does not infer missing milestones or create goals.

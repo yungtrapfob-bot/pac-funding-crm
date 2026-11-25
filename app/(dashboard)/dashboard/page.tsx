@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { requireUser } from '@/lib/auth';
-import { formatPacificFollowUp, pacificDate } from '@/lib/pacific-time';
+import { followUpBucket, formatPacificFollowUp } from '@/lib/pacific-time';
 import { dealQueueGroups, dealStages, leadStages } from '@/lib/sales-labels';
 import { createClient } from '@/lib/supabase/server';
 import { reportDates } from '@/lib/sales-report';
@@ -24,7 +24,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const month = reportDates({ period: 'month' }, new Date(now));
   const [leads, deals, production, ledger] = await Promise.all([
     readPages((from,to) => supabase.from('hot_leads')
-      .select('id,business_name,sales_stage,next_follow_up_date,last_contact_date,notes,assigned_rep_id')
+      .select('id,business_name,sales_stage,next_follow_up_date,last_contact_date,created_at,notes,assigned_rep_id')
       .is('archived_at',null).is('converted_at',null).eq('sales_lost',false).eq('sales_review',false).eq('sales_test',false)
       .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
     readPages((from,to) => supabase.from('crm_sales_deal_queue').select('id,business_name,queue_stage,sales_follow_up_at,sales_next_action,assigned_rep_id')
@@ -56,12 +56,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
     ...leads.filter(l => l.next_follow_up_date).map(l => ({ ...l, due: l.next_follow_up_date!, href: '/hot-leads/' + l.id,
       stage: leadStages[l.sales_stage as keyof typeof leadStages], action: 'Contact merchant' })),
     ...deals.filter(d => d.sales_follow_up_at).map(d => ({ ...d, due: d.sales_follow_up_at!, href: '/deals/' + d.id,
-      stage: dealStages[d.queue_stage], action: d.sales_next_action ?? 'Follow up', last_contact_date: null, notes: null })),
+      stage: dealStages[d.queue_stage], action: d.sales_next_action ?? 'Follow up', last_contact_date: null, created_at: undefined, notes: null })),
   ].sort((a,b) => a.due.localeCompare(b.due));
-  const today = pacificDate(now);
-  const overdue = followups.filter(task => Date.parse(task.due) < Date.parse(now));
-  const dueToday = followups.filter(task => pacificDate(task.due) === today && Date.parse(task.due) >= Date.parse(now));
-  const upcoming = followups.filter(task => pacificDate(task.due) > today);
+  const clock = new Date(now);
+  const buckets = { overdue: [] as typeof followups, today: [] as typeof followups, upcoming: [] as typeof followups };
+  for (const task of followups) buckets[followUpBucket(task.due, clock, task.created_at)].push(task);
+  const { overdue, today: dueToday, upcoming } = buckets;
   const tasks = { due: [...overdue, ...dueToday], overdue, today: dueToday, upcoming }[filter];
   const limit = filters.all === '1' ? 50 : 5;
   const visible = tasks.slice(0, limit);
@@ -113,7 +113,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
           </p>
         </div>
         <div className="text-xs sm:text-right">
-          <p className={overdue.includes(item) ? 'font-medium text-red-800' : 'font-medium'}>{formatPacificFollowUp(item.due)}</p>
+          <p className={overdue.includes(item) ? 'font-medium text-red-800' : 'font-medium'}>{formatPacificFollowUp(item.due, item.created_at)}</p>
           {item.last_contact_date && <p className="text-muted-foreground">Last contact {item.last_contact_date}</p>}
         </div>
       </Link>)}

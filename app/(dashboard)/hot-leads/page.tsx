@@ -1,4 +1,4 @@
-import { formatPacificFollowUp, pacificDate } from '@/lib/pacific-time';
+import { followUpBucket, formatPacificFollowUp } from '@/lib/pacific-time';
 import { readPages } from '@/lib/supabase/read-pages';
 import { leadQueues, leadStages } from '@/lib/sales-labels';
 import Link from 'next/link';
@@ -82,14 +82,10 @@ export default async function HotLeadsPage({
     : { data: [] };
   const assignedRepNameById = new Map((assignedRepProfiles ?? []).map((repProfile) => [repProfile.id, repProfile.full_name ?? null]));
 
-  const now = Date.now();
-  const today = pacificDate(new Date(now));
-  if (searchParams.due === 'today') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today
-      && Date.parse(lead.next_follow_up_date) >= now);
-  }
-  if (searchParams.due === 'overdue') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && Date.parse(lead.next_follow_up_date) < now);
+  const now = new Date();
+  if (searchParams.due === 'today' || searchParams.due === 'overdue') {
+    hotLeads = hotLeads.filter(lead => lead.next_follow_up_date
+      && followUpBucket(lead.next_follow_up_date, now, lead.created_at) === searchParams.due);
   }
   if (searchParams.due === 'unscheduled') {
     hotLeads = hotLeads.filter(lead => !lead.next_follow_up_date);
@@ -113,7 +109,7 @@ export default async function HotLeadsPage({
             <th scope="col" className="w-[24%] px-3 py-3">Business / contact</th>
             <th scope="col" className="w-32 px-3 py-3">Phone</th>
             <th scope="col" className="w-[17%] px-3 py-3">Stage</th>
-            <th scope="col" className="w-36 px-3 py-3">Next follow-up</th>
+            <th scope="col" className="w-40 px-3 py-3">Next follow-up</th>
             <th scope="col" className="w-28 px-3 py-3">Last contact</th>
             {isAdmin && <th scope="col" className="w-28 px-3 py-3">Assigned rep</th>}
             <th scope="col" className="px-3 py-3">Notes</th>
@@ -134,7 +130,7 @@ export default async function HotLeadsPage({
               <td className="whitespace-nowrap px-3 tabular-nums">{lead.phone || '—'}</td>
               <td className="px-3 text-xs">{stage}{lead.sales_test && <span className="block text-muted-foreground">Test record</span>}</td>
               <td className="whitespace-nowrap px-3 text-xs tabular-nums">
-                {lead.next_follow_up_date ? <Link href={href + '#sales-actions'} className="hover:underline">{formatPacificFollowUp(lead.next_follow_up_date)}</Link> : '—'}
+                {lead.next_follow_up_date ? <Link href={href + '#sales-actions'} className="hover:underline">{formatPacificFollowUp(lead.next_follow_up_date, lead.created_at)}</Link> : '—'}
               </td>
               <td className="whitespace-nowrap px-3 text-xs tabular-nums">{lead.last_contact_date || '—'}</td>
               {isAdmin && <td className="truncate px-3 text-xs">{assignedRepNameById.get(lead.assigned_rep_id ?? '') ?? 'Unassigned'}</td>}
