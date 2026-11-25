@@ -58,7 +58,7 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
         <h3 className="text-base font-semibold">File Uploads</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Field label="Application File (single)"><Input type="file" name="application_file" /><span className="text-xs text-muted-foreground">Attach when available. Incomplete files stay in the document queue.</span></Field>
-          <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple /><span className="text-xs text-muted-foreground">Select all statement months and supporting docs before submitting.</span></Field>
+          <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple /><span className="text-xs text-muted-foreground">Paragon typically requires four months. Select all available statement files.</span></Field>
         </div>
       </section>
 
@@ -74,5 +74,5 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function SubmitButton() {
   const { pending } = useFormStatus();
-  return <Button type="submit" className="w-full" disabled={pending}>{pending ? 'Submitting to Underwriting...' : 'Create Deal in Underwriting'}</Button>;
+  return <Button type="submit" className="w-full" disabled={pending}>{pending ? 'Submitting…' : 'Submit to processing'}</Button>;
 }

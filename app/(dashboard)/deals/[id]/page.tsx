@@ -202,7 +202,7 @@ export default async function DealDetailPage({
       <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{deal.business_name}</h1>
-          <Badge>{dealStages[queueStage]}{deal.sales_test && ' · Test record'}</Badge>
+          <Badge>{deal.archived_at ? 'Archived · ' : ''}{dealStages[queueStage]}{deal.sales_test && ' · Test record'}</Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           Assigned Internal Rep:{" "}
@@ -514,7 +514,7 @@ export default async function DealDetailPage({
         {searchParams?.saved === 'stage_error' && <p role="alert" className="text-sm text-red-800">Could not change the pipeline stage. Use Mark lost or Reopen when applicable.</p>}
         {deal.sales_follow_up_at && <p className="mb-2 text-sm">{deal.sales_next_action} · {formatPacificDateTime(deal.sales_follow_up_at)} (Pacific)</p>}
         {deal.converted_from_hot_lead_id && <Link className="mb-2 block text-primary underline" href={`/hot-leads/${deal.converted_from_hot_lead_id}`}>Originating lead and activity</Link>}
-        <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={queueStage === 'funded'}
+        <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={Boolean(deal.archived_at) || queueStage === 'funded'}
           hasTask={Boolean(deal.sales_follow_up_at)} source={deal.sales_source ?? undefined} isTest={Boolean(deal.sales_test)}
           processors={(processors ?? []).map(p => ({id:p.id,name:p.full_name ?? p.id}))} />
       </Card>

@@ -1,5 +1,5 @@
 import { formatPacificDate, formatPacificDateTime } from '@/lib/pacific-time';
-import { dealStages, eventLabels, lossReasons } from '@/lib/sales-labels';
+import { callOutcomes, dealStages, eventLabels, lossReasons } from '@/lib/sales-labels';
 import { createClient } from '@/lib/supabase/server';
 
 function displayTerms(note: string) {
@@ -23,7 +23,7 @@ export async function SalesTimeline({ entity, id }: { entity: 'lead' | 'deal'; i
       <p className="text-muted-foreground">{e.date_only ? `${formatPacificDate(e.occurred_at)} · time unknown` : formatPacificDateTime(e.occurred_at)}
         {e.evidence !== 'recorded' && ' · historical evidence'}
         {e.actor && ` · ${(Array.isArray(e.actor) ? e.actor[0] : e.actor)?.full_name ?? 'CRM user'}`}
-        {e.reason && ` · ${lossReasons[e.reason] ?? e.reason}`}
+        {e.reason && ` · ${callOutcomes[e.reason as keyof typeof callOutcomes] ?? lossReasons[e.reason] ?? e.reason}`}
         {e.kind === 'lost' && e.stage && ` · ${dealStages[e.stage] ?? eventLabels[e.stage] ?? e.stage}`}
       </p>
           {e.note && (e.kind === 'offer_response'

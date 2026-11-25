@@ -179,7 +179,7 @@ export function firstContactMedian(rows: SalesOpportunity[], dates: ReportDates)
   return median(rows.flatMap(row => {
     const start = observed(row, 'lead_created', dates);
     if (!start || start.date_only) return [];
-    const end = row.events.find(e => ['call','text','email'].includes(e.kind) && e.occurred_at >= start.occurred_at && e.occurred_at < dates.cutoff);
+    const end = row.events.find(e => ['call','text','email'].includes(e.kind) && (e.kind !== 'call' || !e.reason || ['spoke','callback_requested'].includes(e.reason)) && e.occurred_at >= start.occurred_at && e.occurred_at < dates.cutoff);
     return end ? [(Date.parse(end.occurred_at)-Date.parse(start.occurred_at))/DAY] : [];
   }));
 }

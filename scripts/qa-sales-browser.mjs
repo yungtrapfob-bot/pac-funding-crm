@@ -87,14 +87,42 @@ try {
   await rep.waitForURL(/hot-leads\/[0-9a-f-]+\?created=1/);
   const lead = new URL(rep.url()).pathname.split('/').at(-1);
   await action(rep,'schedule',{due:'2027-07-12T09:30'});
+  await rep.locator('#sales-actions').getByRole('button',{name:'Log call',exact:true}).click();
+  await rep.locator('#sales-actions').getByLabel('Call outcome').selectOption('no_answer');
+  await fill(rep.locator('#sales-actions'), { due: '2027-07-13T10:00' });
+  await rep.locator('#sales-actions').getByRole('button',{name:'Save action'}).click();
+  await rep.getByText('No answer',{exact:false}).filter({visible:true}).first().waitFor();
+  const rescheduled = must(await service.from('hot_leads').select('last_contact_date,next_follow_up_date').eq('id',lead).single());
+  assert.equal(rescheduled.last_contact_date,null);
+  assert.equal(Date.parse(rescheduled.next_follow_up_date),Date.parse('2027-07-13T17:00:00Z'));
   await action(rep,'call',{note:'Confirmed merchant contact'});
+  assert.equal(must(await service.from('hot_leads').select('next_follow_up_date').eq('id',lead).single()).next_follow_up_date,null);
+  await rep.goto(base+'/hot-leads/new');
+  await fill(rep,{business_name:'Possible repeat '+nonce,owner_name:'Synthetic QA',phone:'(555) 010-0199'});
+  await rep.getByRole('button',{name:/create lead/i}).click();
+  await rep.getByRole('alert').filter({hasText:'A lead you can access'}).waitFor();
+  assert.equal(await rep.locator('[name=business_name]').inputValue(),'Possible repeat '+nonce);
+  await rep.goto(base+'/hot-leads/'+lead);
   await action(rep,'source',{value:'Cold calling'});
   await rep.locator('#sales-actions').getByLabel('Sales action').selectOption('stage');
   await rep.locator('#sales-actions [name=value]').selectOption('application_requested');
   await rep.locator('#sales-actions').getByRole('button',{name:'Save action'}).click();
   await rep.getByText('Application requested',{exact:true}).first().waitFor();
   await rep.goto(base+'/hot-leads?q='+nonce);
-  await rep.getByRole('link',{name}).waitFor();
+  await rep.getByRole('link',{name,exact:true}).waitFor();
+  for (const [width,height] of [[1280,800],[1440,900],[1920,1080]]) {
+    await rep.setViewportSize({width,height});
+    assert.ok(await rep.locator('tbody tr').first().evaluate(row => row.getBoundingClientRect().height <= 65));
+    assert.ok(await rep.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await rep.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp',`v1-hot-leads-${width}.png`),fullPage:true});
+  }
+  await rep.goto(base+'/dashboard');
+  await rep.getByRole('heading',{name:'Active pipeline'}).waitFor();
+  for (const [width,height] of [[1280,800],[1440,900],[1920,1080]]) {
+    await rep.setViewportSize({width,height});
+    assert.ok(await rep.getByRole('heading',{name:'Active pipeline'}).evaluate(heading => heading.getBoundingClientRect().bottom <= window.innerHeight));
+    await rep.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp',`v1-dashboard-${width}.png`),fullPage:true});
+  }
   await rep.goto(base+'/hot-leads/'+lead+'/convert');
   const intake = rep.locator('form').filter({has: rep.locator('[name=application_file]')});
   await fill(intake,{industry:'Logistics',state:'CA',fico:'680',requested_amount:'21000'});
@@ -209,7 +237,34 @@ try {
   await admin.getByText('2 leads deleted.',{exact:true}).waitFor();
   assert.equal(must(await service.from('hot_leads').select('id').in('id',fixtures.map(x=>x.id))).length,0);
   assert.equal(must(await service.from('hot_leads').select('id').eq('id',lead).single()).id,lead);
-  console.log('PASS browser single/bulk legacy-ID deletion, protected conversion and archive preservation.');
+  console.log('PASS browser single/bulk lead deletion without test designation, protected conversion and archive preservation.');
+  const emptyDeal = must(await service.from('deals').insert({
+    business_name:`Empty deal ${nonce}`,owner_name:'Synthetic',email:'qa@example.test',phone:'5550100199',assigned_rep_id:third.id,
+  }).select('id,business_name').single());
+  await admin.goto(base+'/deals?q='+nonce);
+  await admin.getByRole('checkbox',{name:'Select '+emptyDeal.business_name,exact:true}).check();
+  await admin.getByLabel('Deal actions').selectOption('mark_test');
+  await admin.getByRole('button',{name:'Review selection'}).click();
+  await admin.getByRole('button',{name:'Confirm action',exact:true}).click();
+  await admin.getByText('1 deal marked as test.',{exact:true}).waitFor();
+  assert.equal(await admin.getByRole('link',{name:emptyDeal.business_name,exact:true}).count(),0);
+  await admin.goto(base+'/deals?test=include&q='+nonce);
+  await admin.getByRole('checkbox',{name:'Select '+emptyDeal.business_name,exact:true}).check();
+  await admin.getByRole('checkbox',{name:'Select '+name,exact:true}).check();
+  await admin.getByLabel('Deal actions').selectOption('delete');
+  await admin.getByRole('button',{name:'Review selection'}).click();
+  await admin.getByText(/Funding or commission history is protected/).waitFor();
+  await admin.getByRole('button',{name:'Confirm eligible deals only'}).click();
+  await admin.getByText('1 deal deleted.',{exact:true}).waitFor();
+  await admin.getByRole('checkbox',{name:'Select '+name,exact:true}).check();
+  await admin.getByLabel('Deal actions').selectOption('archive');
+  await admin.getByRole('button',{name:'Review selection'}).click();
+  await admin.getByRole('button',{name:'Confirm action',exact:true}).click();
+  await admin.getByText('1 deal archived.',{exact:true}).waitFor();
+  await admin.getByRole('link',{name:'View archived deals'}).click();
+  await admin.getByRole('link',{name,exact:true}).waitFor();
+  assert.equal(must(await service.from('commissions').select('id').eq('deal_id',deal)).length,2);
+  console.log('PASS browser protected deal cleanup and funded archive with intact ledger.');
   const other = await signIn(another.email);
   await other.goto(base+'/hot-leads/new');
   await fill(other,{business_name:`Lost QA ${nonce}`,owner_name:'Synthetic QA',phone:'5550100199',email:'qa@example.test'});

@@ -57,3 +57,11 @@ export const dealQueueGroups: Record<string, { label: string; stages: string[] }
   funding: { label: 'Final funding conditions', stages: ['contracts_signed', 'final_conditions'] },
   documents: { label: 'Deals missing documents', stages: ['missing_documents'] },
 };
+
+export const callOutcomes = {
+  spoke: 'Spoke with merchant',
+  no_answer: 'No answer',
+  voicemail: 'Left voicemail',
+  callback_requested: 'Callback requested',
+  wrong_number: 'Wrong number',
+} as const;

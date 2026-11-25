@@ -65,7 +65,7 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
             <p className="text-sm text-muted-foreground">{lead.sales_review ? 'Conversion needs review' : lead.converted_at ? 'Converted' : lead.archived_at ? 'Archived' : lead.sales_lost ? 'Lost' : leadStages[lead.sales_stage as keyof typeof leadStages]}{lead.sales_test && ' · Test record'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : historical || lead.sales_lost ? null : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to deal</Button></form>}
+            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : historical || lead.sales_lost ? null : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Submit to processing</Button></form>}
           </div>
         </div>
         {!historical && !lead.sales_lost && <details><summary className="cursor-pointer text-sm font-medium">Edit contact details</summary><form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">

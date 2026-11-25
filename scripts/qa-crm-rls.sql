@@ -238,6 +238,11 @@ begin
   exception when raise_exception then
     assert sqlerrm='The selection changed or contains protected deals. Review it again.';
   end;
+  assert public.crm_manage_deal_cleanup(array[empty_id],'mark_test')=1;
+  assert (select sales_test from public.deals where id=empty_id);
+  assert public.crm_manage_deal_cleanup(array[empty_id],'clear_test')=1;
+  assert not (select sales_test from public.deals where id=empty_id);
+  assert (select reason from public.crm_deal_cleanup_eligibility(array[funded_id],'mark_test')) like 'Funding or commission%';
   assert public.crm_manage_deal_cleanup(array[empty_id],'delete')=1;
   assert public.crm_manage_deal_cleanup(array[funded_id],'archive')=1;
   assert (select archived_at from public.crm_sales_deal_queue where id=funded_id) is not null;

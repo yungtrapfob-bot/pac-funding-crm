@@ -6,7 +6,7 @@ import { manageSalesDeals, manageSalesLeads } from '@/actions/sales';
 
 type Lead = { id: string; name: string };
 const Selection = createContext<{ ids: string[]; toggle: (id: string) => void } | null>(null);
-const operations = { archive: 'Archive', delete: 'Delete permanently', restore: 'Restore', reassign: 'Reassign' };
+const operations = { archive: 'Archive', delete: 'Delete permanently', restore: 'Restore', reassign: 'Reassign', mark_test: 'Mark as test', clear_test: 'Clear test designation' };
 
 export function LeadCheckbox({ lead }: { lead: Lead }) {
   const selection = useContext(Selection);

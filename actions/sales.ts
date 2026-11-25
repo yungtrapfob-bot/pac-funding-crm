@@ -24,8 +24,16 @@ export async function recordSalesAction(_: SalesResult, form: FormData): Promise
   const dueAt = due ? parsePacificInput(due) : null;
   if (due && !dueAt) return { status: 'error', message: 'Choose a valid Pacific date and time.' };
   const supabase = await createClient();
-  const { error } = await supabase.rpc('crm_record_sales_action', {
-    entity, record_id: id, action, value: value ?? null, explanation: note ?? null, due_at: dueAt,
+  if (action === 'test_record' && value !== 'true' && value !== 'false') {
+    return { status: 'error', message: 'Choose a test designation.' };
+  }
+  const designation = value === 'true' ? 'mark_test' : 'clear_test';
+  const { error } = action === 'test_record'
+    ? entity === 'lead'
+      ? await supabase.rpc('crm_sales_manage_leads', { lead_ids: [id], operation: designation })
+      : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: [id], operation: designation })
+    : await supabase.rpc('crm_record_sales_action', {
+    entity, record_id: id, action, value: value ?? (action === 'text' || action === 'email' ? 'logged' : null), explanation: note ?? null, due_at: dueAt,
   });
   if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'Could not save the action. Refresh and try again.' };
   revalidatePath(entity === 'lead' ? `/hot-leads/${id}` : `/deals/${id}`);
@@ -33,7 +41,7 @@ export async function recordSalesAction(_: SalesResult, form: FormData): Promise
   return { status: 'success', message: 'Saved.' };
 }
 
-const bulkOperation = z.enum(['archive', 'delete', 'restore', 'reassign']);
+const bulkOperation = z.enum(['archive', 'delete', 'restore', 'reassign', 'mark_test', 'clear_test']);
 export type BulkResult = SalesResult & {
   preview?: { operation: string; rows: { id: string; business_name: string; reason: string | null }[] };
 };
@@ -76,6 +84,6 @@ async function manageSalesRecords(form: FormData, entity: 'lead' | 'deal'): Prom
     : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: recordIds, operation });
   if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : `The action could not be completed. No selected ${entity}s were changed.` };
   for (const path of ['/dashboard', '/hot-leads', '/deals', '/admin', '/admin/pipeline', '/admin/processing', '/performance']) revalidatePath(path);
-  const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned' }[operation];
+  const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned', mark_test: 'marked as test', clear_test: 'cleared of test designation' }[operation];
   return { status: 'success', message: `${data} ${entity}${data === 1 ? '' : 's'} ${verb}.` };
 }

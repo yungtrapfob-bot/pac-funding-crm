@@ -25,10 +25,8 @@ with required_columns(table_name, column_name) as (
   union all
   select 'Lead-only activity and timeline cleanup',
     2 = (select count(distinct conrelid) from pg_constraint
-      where conrelid in (to_regclass('public.activities'),to_regclass('public.crm_sales_events'))
-        and confrelid=to_regclass('public.hot_leads') and contype='f' and confdeltype='c'
-        and pg_get_constraintdef(oid) like 'FOREIGN KEY (hot_lead_id)%' or
-        conrelid=to_regclass('public.crm_sales_events') and confrelid=to_regclass('public.hot_leads')
-        and contype='f' and confdeltype='c' and pg_get_constraintdef(oid) like 'FOREIGN KEY (lead_id)%')
+      where confrelid=to_regclass('public.hot_leads') and contype='f' and confdeltype='c'
+        and ((conrelid=to_regclass('public.activities') and pg_get_constraintdef(oid) like 'FOREIGN KEY (hot_lead_id)%')
+          or (conrelid=to_regclass('public.crm_sales_events') and pg_get_constraintdef(oid) like 'FOREIGN KEY (lead_id)%')))
 )
 select check_name,case when passed then 'PASS' else 'FAIL' end as status from checks order by check_name;

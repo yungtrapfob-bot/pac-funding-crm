@@ -58,7 +58,8 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
   }
 
   return <div className="space-y-4"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{queueGroup && !filterQueue ? queueGroup.label : 'Deals'}</h1><Link href="/deals/new" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">Submit Deal</Link></div>
-  <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm"><form className="grid grid-cols-1 gap-2 md:grid-cols-5">{archived && <input type="hidden" name="archived" value="1" />}
+  <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm"><form className="grid grid-cols-1 gap-2 md:grid-cols-5">{queueGroup && <input type="hidden" name="group" value={group} />}
+    {archived && <input type="hidden" name="archived" value="1" />}
     {isAdmin && <label className="self-center text-sm"><input type="checkbox" name="test" value="include" defaultChecked={includeTest} /> Include test deals</label>}
     <Input name="q" defaultValue={q} placeholder="Search business, owner, email"/><select name="queue" aria-label="Operational stage" defaultValue={queue} className="rounded border border-border p-2"><option value="">All operational stages</option>{Object.entries(dealStages).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>
     {profile.role === 'admin' ? <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="">All reps</option>{(reps ?? []).map((internalRep) => <option key={internalRep.id} value={internalRep.id}>{internalRep.full_name ?? internalRep.id}</option>)}</select> : null}

@@ -82,18 +82,22 @@ export default async function HotLeadsPage({
     : { data: [] };
   const assignedRepNameById = new Map((assignedRepProfiles ?? []).map((repProfile) => [repProfile.id, repProfile.full_name ?? null]));
 
-  const today = pacificDate(new Date());
+  const now = Date.now();
+  const today = pacificDate(new Date(now));
   if (searchParams.due === 'today') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today);
+    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today
+      && Date.parse(lead.next_follow_up_date) >= now);
   }
   if (searchParams.due === 'overdue') {
-    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < Date.now());
+    hotLeads = hotLeads.filter((lead) => lead.next_follow_up_date && Date.parse(lead.next_follow_up_date) < now);
+  }
+  if (searchParams.due === 'unscheduled') {
+    hotLeads = hotLeads.filter(lead => !lead.next_follow_up_date);
   }
   if (searchParams.due === 'underwriting') {
     hotLeads = hotLeads.filter((lead) => lead.follow_up_status === 'scheduled' || /underwriting|docs requested/i.test(lead.outcome_tag ?? ''));
   }
   if (sort === 'stale_followups') {
-    const now = Date.now();
     hotLeads = hotLeads
       .filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < now)
       .sort((a, b) => new Date(a.next_follow_up_date).getTime() - new Date(b.next_follow_up_date).getTime());
@@ -166,6 +170,7 @@ export default async function HotLeadsPage({
           {isAdmin && <Link href="/hot-leads?rep=unassigned" className="rounded-full border border-border px-3 py-1.5">Unassigned</Link>}
           <Link href="/hot-leads?due=today" className="rounded-full border border-border px-3 py-1.5">Due today</Link>
           <Link href="/hot-leads?due=overdue" className="rounded-full border border-border px-3 py-1.5">Overdue</Link>
+          <Link href="/hot-leads?due=unscheduled" className="rounded-full border border-border px-3 py-1.5">No next action</Link>
           <Link href="/hot-leads?stage=waiting" className="rounded-full border border-border px-3 py-1.5">Waiting for documents</Link>
         </div>
       </div>
