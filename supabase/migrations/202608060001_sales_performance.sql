@@ -9,6 +9,7 @@ alter table public.hot_leads
   add column sales_lost boolean not null default false,
   add column sales_test boolean not null default false;
 alter table public.deals
+  add column if not exists requested_amount numeric(12,2),
   add column sales_stage text check (sales_stage in ('processing','submitted','underwriting','stipulations','approved','pitched','considering','contract_requested','contracts_out','contracts_signed','final_conditions')),
   add column sales_source text,
   add column sales_lost boolean not null default false,
@@ -16,6 +17,7 @@ alter table public.deals
   add column sales_next_action text,
   add column sales_follow_up_at timestamptz,
   add column sales_processor_id uuid references public.profiles(id);
+grant insert (requested_amount) on public.deals to authenticated;
 
 -- Preserve all links and original dates. Activity without a deal link is
 -- deliberately left for review. No matching by merchant name.
@@ -141,6 +143,7 @@ begin
     raise exception 'This lead already has a deal.';
   end if;
   new.owner_profile_id := coalesce(lead.owner_profile_id, lead.assigned_rep_id);
+  new.requested_amount := coalesce(new.requested_amount, nullif(lead.requested_amount,0));
   new.sales_source := lead.sales_source;
   new.sales_test := lead.sales_test;
   return new;
@@ -264,11 +267,16 @@ revoke all on function public.crm_sales_deal_evidence() from public, anon, authe
 create function public.crm_sales_validate_document_object()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
+declare role_name text;
 begin
-  if auth.uid() is not null and new.file_type in ('application','statement')
-    and not exists (
-      select 1 from storage.objects o where o.bucket_id='deal-files' and o.name=new.path
-    ) then
+  if auth.uid() is null or new.file_type not in ('application','statement') then return new; end if;
+  role_name := public.crm_role();
+  if role_name is null or split_part(new.path,'/',1) is distinct from new.deal_id::text
+    or not exists (select 1 from public.deals d where d.id=new.deal_id
+      and (role_name='admin' or d.assigned_rep_id=auth.uid())) then
+    raise exception 'Deal document is unavailable.';
+  end if;
+  if not exists (select 1 from storage.objects o where o.bucket_id='deal-files' and o.name=new.path) then
     raise exception 'Upload the document to private Storage before recording it.';
   end if;
   return new;
@@ -305,7 +313,8 @@ select d.id,d.business_name,d.current_stage,d.assigned_rep_id,d.owner_profile_id
     when d.current_stage::text in ('Application Processed','In Underwriting') then 'underwriting'
     else 'processing'
   end as queue_stage,
-  coalesce(f.application,false) and coalesce(f.statement,false) as has_documents
+  coalesce(f.application,false) and coalesce(f.statement,false) as has_documents,
+  d.requested_amount
 from public.deals d
 left join lateral (
   select bool_or(file_type='application') as application,bool_or(file_type='statement') as statement

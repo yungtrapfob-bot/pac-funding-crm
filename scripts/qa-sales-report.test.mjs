@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildOpportunities, eventWithin, funnelStages, lastLoss, milestoneMedian, milestonePair, reportDates } from '../lib/sales-report.ts';
+import { buildOpportunities, eventWithin, funnelStages, lastLoss, matchedConversionRows, milestoneMedian, milestonePair, needsHighValueReview, reportDates, stageEntered } from '../lib/sales-report.ts';
 
 const date = (day) => '2026-11-' + String(day).padStart(2,'0') + 'T18:00:00Z';
 const mkEvent = (id, record, kind, occurred_at, extra = {}) => ({
@@ -67,5 +67,24 @@ test('does not turn out-of-order historical milestones into successful conversio
     mkEvent('submission',{deal_id:'historic'},'submitted',date(5)),
   ], []);
   assert.deepEqual(milestonePair(rows,'submitted','approved',dates),{sample:1,converted:0,rate:0});
+  assert.equal(matchedConversionRows(rows,'submitted','approved',dates).converted.length,0);
   assert.deepEqual(milestoneMedian(rows,'submitted','approved',dates),{sample:0,days:null});
+});
+
+test('attention uses measured activity and the current stage entry', () => {
+  const deals = [
+    {id:'stale',queue_stage:'submitted',requested_amount:50_000,submitted_at:date(1)},
+    {id:'recent',queue_stage:'submitted',requested_amount:75_000,submitted_at:date(1)},
+    {id:'unknown-amount',queue_stage:'submitted',requested_amount:null,submitted_at:date(1)},
+    {id:'funded',queue_stage:'funded',requested_amount:75_000,submitted_at:date(1)},
+  ];
+  const history = [
+    mkEvent('first',{deal_id:'stale'},'submitted',date(2)),
+    mkEvent('another-funder',{deal_id:'stale'},'submitted',date(4)),
+    mkEvent('party',{deal_id:'recent'},'offer_response',date(8)),
+  ];
+  const rows = buildOpportunities([],deals,history,[]);
+  assert.equal(stageEntered(rows[0]),'2026-11-02T18:00:00.000Z');
+  assert.equal(stageEntered(rows[1]),null);
+  assert.deepEqual(rows.filter(row => needsHighValueReview(row,Date.parse(date(8)))).map(row => row.deal.id),['stale']);
 });

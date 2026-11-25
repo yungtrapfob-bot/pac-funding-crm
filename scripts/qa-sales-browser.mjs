@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright-core';
 import { createClient } from '@supabase/supabase-js';
 import { join } from 'node:path';
+import { pacificDate } from '../lib/pacific-time.ts';
 
 assert.equal(process.env.QA_SALES_LOCAL_ONLY, 'yes', 'Explicit disposable local QA authorization required');
 const base = 'http://127.0.0.1:3100';
@@ -109,6 +110,7 @@ try {
   const currentDeal = must(await service.from('deals').select('*').eq('id',deal).single());
   assert.equal(currentDeal.owner_profile_id,opener.id);
   assert.equal(currentDeal.sales_source,'Cold calling');
+  assert.equal(currentDeal.requested_amount,21000);
   await rep.goto(base+'/hot-leads?q='+nonce);
   await rep.getByText('No leads found for this queue view.').waitFor();
   await rep.goto(base+'/hot-leads?view=converted&q='+nonce);
@@ -148,7 +150,7 @@ try {
   await action(admin,'contracts_out');
   await action(admin,'contracts_signed');
   const financial=admin.locator('form').filter({has:admin.locator('[name=gross_commission]')});
-  await fill(financial,{funded_date:'2026-11-24',funded_amount:'21000',gross_commission:'1200'});
+  await fill(financial,{funded_date:pacificDate(new Date()),funded_amount:'21000',gross_commission:'1200'});
   await financial.locator('button[type=submit]').click();
   await admin.waitForURL(/saved=workflow/);
   const pipeline=admin.locator('form').filter({has:admin.locator('[name=current_stage]')});
@@ -166,6 +168,11 @@ try {
   await rep.getByRole('heading',{name:'My performance'}).waitFor();
   await admin.goto(base+'/admin');
   await admin.getByRole('heading',{name:'Sales Performance Center'}).waitFor();
+  await admin.getByRole('link',{name:'commission',exact:true}).click();
+  await admin.waitForURL(url => url.searchParams.get('sort') === 'commission');
+  await admin.locator('select[name=period]').selectOption('week');
+  await admin.getByRole('button',{name:'Apply',exact:true}).click();
+  await admin.waitForURL(url => url.searchParams.get('period') === 'week');
   await admin.getByRole('link',{name:`Sales QA opener ${nonce}`,exact:true}).first().click();
   await admin.getByRole('heading',{name:/Sales QA opener/}).waitFor();
   console.log('PASS browser submission, approval, pitch, contracts, funding, opener and closer commissions, and performance drill-down.');
@@ -236,24 +243,45 @@ try {
   assert.equal(assignments.owner_profile_id,third.id);
   assert.equal(assignments.assigned_rep_id,opener.id);
   console.log('PASS browser restore and reassignment with original owner unchanged.');
+  const stale = `High-value QA ${nonce}`;
+  const fresh = `Recent high-value QA ${nonce}`;
+  const requested = { owner_name:'Synthetic',email:'qa@example.test',phone:'5550100199',assigned_rep_id:third.id,requested_amount:75000 };
+  must(await service.from('deals').insert([
+    {...requested,business_name:stale,submitted_at:new Date(Date.now() - 5*86400000).toISOString()},
+    {...requested,business_name:fresh,submitted_at:new Date().toISOString()},
+  ]));
+  await admin.goto(base+'/admin?rep='+third.id+'&attribution=assignee');
+  await admin.getByRole('link',{name:/High-value requests without recent activity/}).click();
+  const attention = admin.locator('#records');
+  await attention.getByRole('link',{name:stale,exact:true}).waitFor();
+  await attention.getByText('$75,000.00',{exact:true}).waitFor();
+  assert.equal(await attention.getByRole('link',{name:fresh,exact:true}).count(),0);
+  console.log('PASS browser stale high-value drill-down filters recent requests and shows recorded requested amounts.');
   await admin.setViewportSize({width:1440,height:1050});
   await admin.goto(base+'/admin');
+  assert.ok(await admin.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await admin.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','crm-sales-performance.png'),fullPage:true});
   await rep.setViewportSize({width:1280,height:900});
   await rep.goto(base+'/dashboard');
+  assert.ok(await rep.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await rep.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','crm-rep-action-center.png'),fullPage:true});
   console.log('PASS browser structured loss and reopen. Captured desktop and laptop screenshots.');
-  const direct = must(await service.from('deals').insert({
-    business_name:`Direct incomplete QA ${nonce}`,owner_name:'Synthetic',email:'qa@example.test',
-    phone:'5550100199',assigned_rep_id:third.id
-  }).select('id').single());
-  const ownerSession = await session(third.email);
+  await rep.goto(base+'/deals/new');
+  const directForm = rep.locator('form').filter({has:rep.locator('[name=requested_amount]')});
+  await fill(directForm, {business_name:`Direct incomplete QA ${nonce}`, owner_name:'Synthetic', email:'qa@example.test',
+    phone:'5550100199', industry:'Logistics', state:'CA', monthly_revenue:'42000', time_in_business_months:'24',
+    positions:'0', nsf_count:'0', deposits:'15', fico:'680', requested_amount:'73500'});
+  await directForm.getByRole('button',{name:'Submit Deal'}).click();
+  await rep.waitForURL(/deals\/[0-9a-f-]+\?upload=incomplete/);
+  const direct = { id: new URL(rep.url()).pathname.split('/').at(-1) };
+  const ownerSession = await session(opener.email);
   const unuploaded = await ownerSession.client.from('deal_files').insert({
     deal_id:direct.id, file_type:'application',path:direct.id+'/synthetic-absent.pdf',
   });
   assert.match(unuploaded.error?.message ?? '', /Upload the document/);
-  const directQueue = must(await service.from('crm_sales_deal_queue').select('queue_stage').eq('id',direct.id).single());
+  const directQueue = must(await service.from('crm_sales_deal_queue').select('queue_stage,requested_amount').eq('id',direct.id).single());
   assert.equal(directQueue.queue_stage,'missing_documents');
+  assert.equal(directQueue.requested_amount,73500);
   assert.equal(must(await service.from('crm_sales_events').select('id').eq('deal_id',direct.id).eq('kind','application_completed')).length,0);
   await admin.goto(base+'/deals/'+direct.id);
   await admin.locator('#sales-actions').getByLabel('Sales action').selectOption('lost');

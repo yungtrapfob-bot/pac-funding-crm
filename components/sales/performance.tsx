@@ -2,13 +2,14 @@ import Link from 'next/link';
 import { Card } from '@/components/ui/card';
 import { requireUser } from '@/lib/auth';
 import { readSalesData } from '@/lib/sales-data';
-import { buildOpportunities, eventWithin, firstContactMedian, funnelStages, lastLoss, milestoneMedian, milestonePair, observed, precedingPeriod, reportDates, type Milestone, type SalesOpportunity } from '@/lib/sales-report';
+import { buildOpportunities, eventWithin, firstContactMedian, funnelStages, highValueRequest, lastDealActivity, lastLoss, matchedConversionRows, milestoneMedian, milestonePair, needsHighValueReview, observed, precedingPeriod, reportDates, salesAttentionDays, stageEntered, type Milestone, type SalesOpportunity } from '@/lib/sales-report';
 import { dealStages, eventLabels, lossReasons } from '@/lib/sales-labels';
 import { formatPacificDate, formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
 
 type Filters = { period?: string; from?: string; to?: string; asOf?: string; cohort?: string; rep?: string; attribution?: string; metric?: string; sort?: string };
-type Result = { label: string; value: string | number; rows: SalesOpportunity[] };
+type Result = { label: string; value: string | number; rows: SalesOpportunity[]; milestone?: Milestone };
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 });
+const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const percent = (rate: number | null) => rate === null ? 'N/A' : (rate * 100).toFixed(1) + '%';
 const isActiveLead = (r: SalesOpportunity) => r.lead && !r.lead.archived_at && !r.lead.converted_at && !r.lead.sales_lost && !r.lead.sales_review;
 const isOpenDeal = (r: SalesOpportunity) => r.deal && !['funded','lost'].includes(r.deal.queue_stage);
@@ -57,8 +58,8 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
   const now = Date.now();
   const overdue = due.filter(row => Date.parse(followup(row)!) < now);
   const views = new Map<string,Result>();
-  const add = (key: string, label: string, rows: SalesOpportunity[], value: string | number = rows.length) => {
-    views.set(key,{label,rows,value}); return key;
+  const add = (key: string, label: string, rows: SalesOpportunity[], value: string | number = rows.length, milestone?: Milestone) => {
+    views.set(key,{label,rows,value,milestone}); return key;
   };
   const activityKeys = funnelStages.map(stage => add('activity-' + stage, eventLabels[stage], activity(scoped,stage)));
   activityKeys.push(add('volume','Funded volume',recordedFunded,recordedFunded.length ? money.format(recordedFunded.reduce((sum,r) => sum+Number(r.deal?.funded_amount ?? 0),0)) : 'N/A'));
@@ -71,25 +72,18 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
     activityKeys.push(add('retained','Company retained commission',fundedRows,grossKnown && allHaveLedger && fundedRows.length ? money.format(gross-earned(fundedExpense)) : 'N/A'));
   }
   const funnelKeys = stages.map(stage => add('cohort-' + stage,eventLabels[stage],cohort.filter(row => observed(row,stage,dates))));
-  const agingAnchor = (row: SalesOpportunity) => {
-    const events = [...row.events].reverse();
-    const kind = ({ approved: 'approved', pitched: 'pitched', contracts_out: 'contracts_out',
-      contracts_signed: 'contracts_signed', submitted: 'submitted' } as Record<string,string>)[row.deal?.queue_stage ?? ''];
-    return events.find(e => e.kind === kind || (e.kind === 'stage_changed' && e.stage === row.deal?.sales_stage));
-  };
   const open = scoped.filter(isOpenDeal);
-  const stalledContracts = open.filter(r => {
-    const anchor = agingAnchor(r);
-    return r.deal?.queue_stage === 'contracts_out' && anchor && Date.parse(anchor.occurred_at) < now-3*86400000;
-  });
+  const aged = open.filter(r => Date.parse(stageEntered(r) ?? '') < now - salesAttentionDays * 86400000);
+  const stalledContracts = aged.filter(r => r.deal?.queue_stage === 'contracts_out');
   const bottlenecks = [
     add('overdue','Overdue follow-ups',overdue), add('followups','Outstanding follow-ups',due),
     add('approved-queue','Approvals awaiting a recorded pitch',open.filter(r => r.deal?.queue_stage === 'approved' && !r.milestones.pitched)),
     add('aged-contracts','Contracts out more than 3 days',stalledContracts),
     add('final-conditions','Unresolved funding conditions',open.filter(r => r.deal?.queue_stage === 'final_conditions' || r.deal?.queue_stage === 'stipulations')),
-    add('stalled-apps','Incomplete applications open more than 3 days',open.filter(r => r.deal?.queue_stage === 'missing_documents' && Date.parse(r.deal.submitted_at) < now-3*86400000)),
-    add('merchant-response','Merchant considering offer',open.filter(r => r.deal?.queue_stage === 'considering')),
+    add('stalled-apps','Incomplete applications open more than 3 days',aged.filter(r => r.deal?.queue_stage === 'missing_documents')),
+    add('merchant-response','Merchant response pending',open.filter(r => ['pitched','considering'].includes(r.deal?.queue_stage ?? ''))),
   ];
+  if (isAdmin) bottlenecks.push(add('high-value-idle','High-value requests without recent activity',open.filter(r => needsHighValueReview(r,now))));
   const pairs: [Milestone,Milestone][] = [
     ['lead_created','application_completed'],['application_completed','submitted'],['submitted','approved'],
     ['approved','pitched'],['pitched','contracts_out'],['contracts_out','funded'],
@@ -99,9 +93,13 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
     `${a}-${b}`, add(`speed-${a}-${b}`,`${eventLabels[a]} to ${eventLabels[b]}`,cohort.filter(row => {
       const first=observed(row,a,dates), second=observed(row,b,dates);
       return first && second && !first.date_only && !second.date_only && second.occurred_at >= first.occurred_at;
-    })),
+    }),undefined,b),
   ]));
-  const detail = filters.metric ? views.get(filters.metric) : undefined;
+  const rates = new Map(pairs.map(([a,b]) => {
+    const { reached, converted } = matchedConversionRows(cohort,a,b,dates);
+    const key = add(`conversion-${a}-${b}`,`${eventLabels[a]} to ${eventLabels[b]}`,converted,undefined,b);
+    return [`${a}-${b}`, { key, converted:converted.length, sample:reached.length, rate:reached.length ? converted.length/reached.length : null }];
+  }));
   const path = isAdmin ? '/admin' : '/performance';
   const url = (patch: Filters) => {
     const params = new URLSearchParams();
@@ -132,7 +130,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
     trend.set(month,[...(trend.get(month) ?? []),row]);
   }
   for (const [month, group] of trend) add('loss-month-' + month, month,group);
-  const resolvedDetail = filters.metric ? views.get(filters.metric) ?? detail : detail;
+  const resolvedDetail = filters.metric ? views.get(filters.metric) : undefined;
   const rows = isAdmin && !rep ? people.map(person => {
     const owned = population.filter(row => row[by] === person.id);
     const group = cohortFor(owned);
@@ -212,6 +210,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
           <Link href={url({metric:key})} className="flex justify-between gap-3 py-2 text-primary">{item.label}<span className="font-semibold">{item.value}</span></Link>
         </li>; })}</ul>
         <p className="text-xs text-muted-foreground">Review the owner and last recorded milestone before assigning follow-up. Aging uses three elapsed days where the starting event exists.</p>
+        {isAdmin && <p className="text-xs text-muted-foreground">High-value requests are {wholeDollars.format(highValueRequest)} or more, with no recorded deal activity in the last {salesAttentionDays} days.</p>}
         {recent.sample >= 5 && before.sample >= 5
           ? <p className="text-sm">Application to approval is <Link className="text-primary underline" href={url({metric:'cohort-approved'})}>{percent(recent.rate)} ({recent.converted}/{recent.sample})</Link>
             {' '}versus {percent(before.rate)} ({before.converted}/{before.sample}) in the preceding cohort, {previous.from}–{previous.to}, with equal elapsed observation time.</p>
@@ -223,10 +222,10 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
       <div className="overflow-x-auto"><table className="w-full text-sm">
         <thead className="text-left text-muted-foreground"><tr><th>Transition</th><th>Matched conversion</th><th>Median elapsed</th></tr></thead>
         <tbody>{pairs.map(([a,b]) => {
-          const result = milestonePair(cohort,a,b,dates);
+          const result = rates.get(`${a}-${b}`)!;
           const speed = milestoneMedian(cohort,a,b,dates);
           return <tr key={`${a}-${b}`} className="border-t border-border"><td className="py-1.5">{eventLabels[a]} → {eventLabels[b]}</td>
-            <td>{percent(result.rate)} · {result.converted}/{result.sample}</td><td>{speed.days == null ? 'N/A' : <Link className="text-primary underline"
+            <td>{result.rate == null ? 'N/A' : <Link className="text-primary underline" href={url({metric:result.key})}>{percent(result.rate)} · {result.converted}/{result.sample}</Link>}</td><td>{speed.days == null ? 'N/A' : <Link className="text-primary underline"
               href={url({metric:speedLinks.get(`${a}-${b}`)})}>{speed.days.toFixed(1)} d · n={speed.sample}</Link>}</td></tr>;
         })}<tr className="border-t border-border"><td className="py-1.5">Lead created → first recorded contact</td><td>—</td>
           <td>{(() => { const speed=firstContactMedian(cohort,dates); return speed.days == null ? 'N/A' : `${speed.days.toFixed(1)} d · n=${speed.sample}`; })()}</td></tr></tbody>
@@ -266,17 +265,19 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
     {resolvedDetail && <Card id="records">
       <h2 className="mb-2 font-semibold">{resolvedDetail.label} · {resolvedDetail.rows.length} records</h2>
       {!resolvedDetail.rows.length ? <p className="text-sm text-muted-foreground">No eligible records in this view.</p> : <div className="overflow-x-auto"><table className="w-full text-sm">
-        <thead className="text-left"><tr>{['Merchant','Stage','Assigned','Origin','Closer','Milestone or due','Outcome','Funded amount'].map(label => <th key={label} className="pr-2">{label}</th>)}</tr></thead>
+        <thead className="text-left"><tr>{['Merchant','Stage','Assigned','Origin','Closer',filters.metric === 'high-value-idle' ? 'Last activity' : 'Milestone or due','Outcome',filters.metric === 'high-value-idle' ? 'Requested amount' : 'Funded amount'].map(label => <th key={label} className="pr-2">{label}</th>)}</tr></thead>
         <tbody>{resolvedDetail.rows.map(row => {
           const id = row.deal?.id ?? row.lead!.id;
           const stage = row.deal?.queue_stage ?? row.lead?.sales_stage ?? '';
-          const metricStage = filters.metric?.replace(/^(activity|cohort)-/,'') as Milestone;
+          const metricStage = resolvedDetail.milestone ?? filters.metric?.replace(/^(activity|cohort)-/,'') as Milestone;
           const milestone = row.milestones[metricStage] ?? (filters.metric?.startsWith('loss') ? lastLoss(row,dates) : undefined);
           const date = milestone ? (milestone.date_only ? formatPacificDate(milestone.occurred_at) : formatPacificDateTime(milestone.occurred_at)) : followup(row) ? formatPacificDateTime(followup(row)!) : '—';
+          const lastActivity = filters.metric === 'high-value-idle' ? lastDealActivity(row) : null;
+          const entered = isOpenDeal(row) ? stageEntered(row) : null;
           return <tr key={id} className="border-t border-border"><td className="py-1.5 pr-2"><Link className="text-primary underline" href={(row.deal ? '/deals/' : '/hot-leads/')+id}>{row.deal?.business_name ?? row.lead?.business_name}</Link></td>
-            <td>{dealStages[stage] ?? eventLabels[stage] ?? stage}</td>
+            <td>{dealStages[stage] ?? eventLabels[stage] ?? stage}{entered && <span className="block text-xs text-muted-foreground">{Math.max(0,Math.floor((now-Date.parse(entered))/86400000))} d in stage</span>}</td>
             {[row.assignee,row.owner,row.closer].map((person,i) => <td key={i}>{person ? names.get(person) ?? '—' : '—'}</td>)}
-            <td>{date}</td><td>{stage === 'lost' || row.lead?.sales_lost ? 'Lost' : stage === 'funded' ? 'Funded' : 'Open'}</td><td>{row.deal?.queue_stage === 'funded' && row.deal.funded_amount != null ? money.format(Number(row.deal.funded_amount)) : '—'}</td>
+            <td>{lastActivity ? formatPacificDateTime(lastActivity) : date}</td><td>{stage === 'lost' || row.lead?.sales_lost ? 'Lost' : stage === 'funded' ? 'Funded' : 'Open'}</td><td>{lastActivity ? money.format(Number(row.deal?.requested_amount)) : row.deal?.queue_stage === 'funded' && row.deal.funded_amount != null ? money.format(Number(row.deal.funded_amount)) : '—'}</td>
           </tr>;
         })}</tbody>
       </table></div>}

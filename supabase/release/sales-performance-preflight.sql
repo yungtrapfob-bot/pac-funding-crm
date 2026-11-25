@@ -1,14 +1,16 @@
 -- Read-only. Review warnings with production access before applying the release.
 with required(relation, columns) as (
   values
-    ('public.hot_leads','id business_name assigned_rep_id owner_profile_id archived_at next_follow_up_date last_contact_date created_at outcome_tag follow_up_status'),
+    ('public.hot_leads','id business_name assigned_rep_id owner_profile_id archived_at next_follow_up_date last_contact_date created_at outcome_tag follow_up_status requested_amount'),
     ('public.deals','id business_name assigned_rep_id owner_profile_id closer_rep_id converted_from_hot_lead_id current_stage submitted_at funded_date funded_amount gross_commission gross_psf contracts_sent_date'),
     ('public.activities','id hot_lead_id deal_id actor_id activity_type created_at details'),
-    ('public.offers','id deal_id funder status decision approval_amount created_at'),
-    ('public.deal_files','id deal_id file_type created_at'),
+    ('public.offers','id deal_id funder status decision approval_amount created_at factor_rate payment_amount payment_frequency term term_payments decline_reason stipulations'),
+    ('public.deal_files','id deal_id file_type path created_at'),
     ('public.funder_submission_logs','id deal_id funder_name submitted_at submitted_by status'),
-    ('public.profiles','id role is_active sessions_revoked_at'),
-    ('public.commissions','id deal_id rep_id commission_amount recognized_at')
+    ('public.profiles','id full_name role is_active sessions_revoked_at'),
+    ('public.commissions','id deal_id rep_id commission_amount recognized_at'),
+    ('storage.objects','bucket_id name'),
+    ('storage.buckets','id public')
 ), missing as (
   select string_agg(r.relation || '.' || col, ', ') as detail
   from required r cross join lateral unnest(string_to_array(r.columns,' ')) col
@@ -47,10 +49,15 @@ with required(relation, columns) as (
     then 'PASS' else 'FAIL' end,'Requires the production-readiness trigger paths.'
   union all select 8,'Storage ACL',case when exists (
     select 1 from pg_policies where schemaname='storage' and tablename='objects' and policyname='crm_private_deal_objects'
-  ) then 'PASS' else 'FAIL' end,'Retain the private deal documents policy.'
+  ) and exists (select 1 from storage.buckets where id='deal-files' and public is false)
+  then 'PASS' else 'FAIL' end,'Requires the private deal-files bucket and its document policy.'
   union all select 9,'Table and trigger ownership', 'WARNING',
     'Run as the same trusted migration owner used for Phase 2 compatibility. Verify custom triggers and permissions on CRM tables.'
   union all select 10,'Historical evidence and deployment', 'WARNING',
     'Back up data first. Compare ledger totals and row counts afterward. Confirm legacy authorized conversion links and keep hard deletion limited to explicitly marked synthetic records.'
+  union all select 11,'Optional structured deal request amount',case when exists (
+    select 1 from pg_attribute where attrelid=to_regclass('public.deals') and attname='requested_amount'
+      and not attisdropped and atttypid<>'numeric'::regtype
+  ) then 'FAIL' else 'PASS' end,'The release uses numeric deal request amounts when present and adds the column when absent.'
 )
 select check_name,status,details from checks order by n;

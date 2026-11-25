@@ -14,6 +14,9 @@ export default async function SubmitDealPage({ searchParams: pendingSearchParams
       {searchParams.upload === "missing" && <p role="alert" className="text-sm text-red-800">Attach a signed application and at least one bank statement.</p>}
       <form action={createDeal} className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {fields.map((field) => <Input key={field} name={field} placeholder={field.replaceAll('_', ' ')} required />)}
+        <label className="text-sm">Funding amount requested
+          <Input name="requested_amount" type="number" min="0" max="9999999999.99" step="0.01" />
+        </label>
         <Input name="notes" placeholder="notes" className="md:col-span-2" />
         <Input name="internal_notes" placeholder="internal notes" className="md:col-span-2" />
         <label className="rounded-md border border-dashed border-border p-3 text-sm">

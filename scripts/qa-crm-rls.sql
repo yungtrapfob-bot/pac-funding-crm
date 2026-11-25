@@ -15,10 +15,13 @@ insert into public.hot_leads (id, business_name, owner_name, phone, email, assig
   ('b0000000-0000-4000-8000-000000000001', 'QA converted', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000002'),
   ('b0000000-0000-4000-8000-000000000002', 'QA temporary A', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000002'),
   ('b0000000-0000-4000-8000-000000000003', 'QA temporary B', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000003');
+update public.hot_leads set sales_test = true where id in (
+  'b0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000003'
+);
 insert into public.activities (hot_lead_id, actor_id, activity_type) values
   ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity'),
   ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity');
--- Intentionally no timeline conversion row. The direct foreign key must protect this lead.
+-- The deal insert closes prospecting. The direct foreign key also protects the lead.
 insert into public.deals (id, business_name, owner_name, phone, email, assigned_rep_id, converted_from_hot_lead_id)
 values ('c0000000-0000-4000-8000-000000000001', 'QA deal', 'Synthetic', '5550100', 'qa@example.test',
         'a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001');
@@ -47,6 +50,13 @@ begin
   assert not exists (select 1 from public.offers where id = 'd0000000-0000-4000-8000-000000000001'), 'Cross-rep offer read';
   assert not exists (select 1 from public.deal_files where deal_id = 'c0000000-0000-4000-8000-000000000001'), 'Cross-rep file metadata read';
   assert not exists (select 1 from storage.objects where name = 'c0000000-0000-4000-8000-000000000001/qa.pdf'), 'Cross-rep object read';
+  begin
+    insert into public.deal_files (deal_id, file_type, path)
+      values ('c0000000-0000-4000-8000-000000000001', 'application', 'c0000000-0000-4000-8000-000000000001/qa.pdf');
+    raise exception 'Unexpected cross-rep file insert';
+  exception when raise_exception then
+    assert sqlerrm = 'Deal document is unavailable.';
+  end;
   update public.hot_leads set business_name = 'QA unexpected' where id = 'b0000000-0000-4000-8000-000000000001';
   assert not found, 'Cross-rep lead update';
   begin
@@ -98,7 +108,7 @@ begin
   perform public.crm_select_offer('c0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001');
   assert (select current_stage::text from public.deals where id = 'c0000000-0000-4000-8000-000000000001') = 'Contracts Out';
 
-  declare lead_id uuid; deal_id uuid;
+  declare lead_id uuid; created_deal_id uuid;
   begin
     insert into public.hot_leads (business_name, owner_name, phone, email, assigned_rep_id, next_follow_up_date)
       values ('QA rep-created lead', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), '2027-07-12T16:30:00Z')
@@ -109,16 +119,16 @@ begin
     update public.hot_leads set next_follow_up_date = '2027-07-12T17:30:00Z' where id = lead_id;
     assert found, 'Rep follow-up update';
 
-    insert into public.deals (business_name, owner_name, phone, email, assigned_rep_id, converted_from_hot_lead_id)
-      values ('QA rep-created deal', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), lead_id)
-      returning id into deal_id;
-    assert exists (select 1 from public.deals where id = deal_id and owner_profile_id = auth.uid()), 'Rep-owned deal conversion';
-    insert into public.activities (hot_lead_id, deal_id, actor_id, activity_type)
-      values (lead_id, deal_id, auth.uid(), 'hot_lead_converted');
+    insert into public.deals (business_name, owner_name, phone, email, assigned_rep_id, converted_from_hot_lead_id, requested_amount)
+      values ('QA rep-created deal', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), lead_id, 75000)
+      returning id into created_deal_id;
+    assert exists (select 1 from public.deals where id = created_deal_id and owner_profile_id = auth.uid() and requested_amount = 75000), 'Rep-owned deal conversion';
+    assert exists (select 1 from public.activities where hot_lead_id = lead_id and deal_id = created_deal_id
+      and activity_type = 'hot_lead_converted'), 'Conversion writes linked activity';
     insert into storage.objects (bucket_id, name)
-      values ('deal-files', deal_id::text || '/rep-qa.pdf');
+      values ('deal-files', created_deal_id::text || '/rep-qa.pdf');
     insert into public.deal_files (deal_id, file_type, path)
-      values (deal_id, 'statement', deal_id::text || '/rep-qa.pdf');
+      values (created_deal_id, 'statement', created_deal_id::text || '/rep-qa.pdf');
     begin
       insert into public.deals (business_name, owner_name, phone, email, assigned_rep_id, current_stage)
         values ('QA disallowed funding', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), 'Funded');
@@ -141,7 +151,7 @@ begin
     perform public.crm_manage_hot_leads(array['b0000000-0000-4000-8000-000000000001'::uuid, 'b0000000-0000-4000-8000-000000000002'::uuid], false);
     raise exception 'Unexpected converted lead deletion';
   exception when raise_exception then
-    assert sqlerrm like '%conversion or linked deal%';
+    assert sqlerrm like '%Converted, linked to a deal%';
   end;
   assert exists (select 1 from public.hot_leads where id = 'b0000000-0000-4000-8000-000000000002'), 'Mixed delete must be atomic';
   assert public.crm_reassign_leads('a0000000-0000-4000-8000-000000000003', 'a0000000-0000-4000-8000-000000000002') = 1;
@@ -156,6 +166,9 @@ begin
 end $$;
 
 reset role;
+-- Other synthetic runs may have left active admin fixtures in this disposable database.
+update public.profiles set is_active = false where role = 'admin' and is_active
+  and id <> 'a0000000-0000-4000-8000-000000000001';
 do $$
 begin
   begin

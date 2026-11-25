@@ -17,9 +17,9 @@ export type SalesLead = {
 
 export type SalesDeal = {
   id: string; business_name: string; assigned_rep_id: string | null; owner_profile_id: string | null; closer_rep_id: string | null;
-  sales_processor_id: string | null; sales_stage: string | null; sales_source: string | null; queue_stage: string; sales_test: boolean; sales_lost: boolean;
+  sales_processor_id: string | null; sales_stage: string | null; sales_source: string | null; current_stage: string; queue_stage: string; sales_test: boolean; sales_lost: boolean;
   converted_from_hot_lead_id: string | null; submitted_at: string; sales_follow_up_at: string | null; sales_next_action: string | null;
-  funded_amount: number | null; gross_commission: number | null; has_documents: boolean;
+  requested_amount: number | null; funded_amount: number | null; gross_commission: number | null; has_documents: boolean;
 };
 
 export type SalesOpportunity = {
@@ -33,6 +33,8 @@ export interface ReportDates {
   from: string; to: string; asOf: string; start: string; end: string; cutoff: string; period: string;
 }
 const DAY = 86_400_000;
+export const salesAttentionDays = 3;
+export const highValueRequest = 50_000;
 const dateFormat = /^\d{4}-\d{2}-\d{2}$/;
 const shiftDate = (date: string, days: number) => new Date(Date.parse(date + 'T00:00:00Z') + days * DAY).toISOString().slice(0, 10);
 const isDate = (value?: string) => Boolean(value && dateFormat.test(value) && parsePacificInput(value + 'T00:00'));
@@ -125,7 +127,7 @@ export function observed(row: SalesOpportunity, stage: Milestone, dates: ReportD
   return event && event.occurred_at < dates.cutoff ? event : undefined;
 }
 
-export function milestonePair(rows: SalesOpportunity[], first: Milestone, second: Milestone, dates: ReportDates) {
+export function matchedConversionRows(rows: SalesOpportunity[], first: Milestone, second: Milestone, dates: ReportDates) {
   const secondIndex = funnelStages.indexOf(second);
   const reached = rows.filter(row => observed(row, first, dates)).filter(row => (
     observed(row, second, dates) ||
@@ -136,7 +138,40 @@ export function milestonePair(rows: SalesOpportunity[], first: Milestone, second
     const b = observed(row, second, dates);
     return b && b.occurred_at >= a.occurred_at;
   });
+  return { reached, converted };
+}
+
+export function milestonePair(rows: SalesOpportunity[], first: Milestone, second: Milestone, dates: ReportDates) {
+  const { reached, converted } = matchedConversionRows(rows, first, second, dates);
   return { sample: reached.length, converted: converted.length, rate: reached.length ? converted.length / reached.length : null };
+}
+
+export function lastDealActivity(row: SalesOpportunity) {
+  const deal = row.deal;
+  if (!deal) return null;
+  const event = row.events.findLast(event => event.deal_id === deal.id && !event.date_only);
+  return event && Date.parse(event.occurred_at) > Date.parse(deal.submitted_at) ? event.occurred_at : deal.submitted_at;
+}
+
+export function stageEntered(row: SalesOpportunity) {
+  const deal = row.deal;
+  if (!deal) return null;
+  if (deal.queue_stage === 'missing_documents') return deal.submitted_at;
+  const milestone = ({ processing: 'application_completed', submitted: 'submitted', approved: 'approved',
+    pitched: 'pitched', contracts_out: 'contracts_out', contracts_signed: 'contracts_signed' } as Record<string, string>)[deal.queue_stage];
+  const stage = deal.sales_stage ?? deal.current_stage;
+  const first = row.events.find(event => event.deal_id === deal.id && event.kind === milestone);
+  const entry = row.events.findLast(event => event.deal_id === deal.id && (
+    event.kind === 'reopened' || (event.kind === 'stage_changed' && event.stage === stage)
+    || event === first
+  ));
+  return entry && !entry.date_only ? entry.occurred_at : null;
+}
+
+export function needsHighValueReview(row: SalesOpportunity, now: number) {
+  if (!row.deal || ['funded', 'lost'].includes(row.deal.queue_stage) || !(Number(row.deal.requested_amount) >= highValueRequest)) return false;
+  const activity = lastDealActivity(row);
+  return Boolean(activity && now - Date.parse(activity) > salesAttentionDays * DAY);
 }
 
 export function firstContactMedian(rows: SalesOpportunity[], dates: ReportDates) {

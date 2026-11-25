@@ -10,7 +10,7 @@ export async function readSalesData() {
     readPages<SalesDeal>((from,to) => supabase.from('crm_sales_deal_queue').select('*').order('id').range(from,to)),
     readPages<SalesEvent>((from,to) => supabase.from('crm_sales_events')
       .select('id,lead_id,deal_id,kind,occurred_at,origin_id,assigned_id,closer_id,processor_id,stage,reason,date_only')
-      .not('kind','in','(note,task_scheduled,task_completed,offer_response)').order('id').range(from,to)),
+      .neq('kind','task_scheduled').order('id').range(from,to)),
     readPages<{ hot_lead_id: string; deal_id: string }>((from,to) => supabase.from('activities').select('hot_lead_id,deal_id')
       .eq('activity_type','hot_lead_converted').not('hot_lead_id','is',null).not('deal_id','is',null).order('id').range(from,to)),
     readPages<{ id: string; deal_id: string; rep_id: string; recognized_at: string | null; commission_amount: number }>((from,to) =>

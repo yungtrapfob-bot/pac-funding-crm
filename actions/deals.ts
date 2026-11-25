@@ -210,12 +210,13 @@ export async function updateHotLead(formData: FormData) {
   redirect(`/hot-leads/${leadId}?saved=hot_lead`);
 }
 
-function formatRequestedAmountForNotes(
-  value: FormDataEntryValue | number | null | undefined,
-) {
-  const amount = typeof value === "number" ? value : Number(value ?? 0);
-  if (!Number.isFinite(amount) || amount <= 0) return null;
-  return `Requested funding amount: $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
+function parseRequestedAmount(value: FormDataEntryValue | null) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) && amount > 0 && amount <= 9_999_999_999.99 ? amount : null;
+}
+
+function formatRequestedAmountForNotes(amount: number | null) {
+  return amount == null ? null : `Requested funding amount: $${amount.toLocaleString("en-US", { maximumFractionDigits: 2 })}`;
 }
 
 function appendNoteLine(
@@ -310,7 +311,7 @@ export async function submitHotLeadConversion(
   if (legacyConversion?.deal_id) redirect(`/deals/${legacyConversion.deal_id}`);
 
   const assignedRepId = resolveHotLeadAssignedRepId(lead) ?? profile.id;
-  const requestedAmount = Number(formData.get("requested_amount") ?? 0);
+  const requestedAmount = parseRequestedAmount(formData.get("requested_amount"));
   const requestedAmountNote = formatRequestedAmountForNotes(requestedAmount);
   const files = getFileEntries(formData);
   const payload = {
@@ -328,6 +329,7 @@ export async function submitHotLeadConversion(
     nsf_count: Number(formData.get("nsf_count") ?? 0),
     deposits: Number(formData.get("deposits") ?? 0),
     fico: Number(formData.get("fico") ?? 0),
+    requested_amount: requestedAmount,
     notes: String(formData.get("notes") ?? ""),
     internal_notes: appendNoteLine(
       formData.get("internal_notes"),
@@ -385,9 +387,8 @@ export async function createDeal(formData: FormData) {
   const assignedRepId = await resolveProfileIdForUser();
   const files = getFileEntries(formData);
   const payload = Object.fromEntries(formData);
-  const requestedAmountNote = formatRequestedAmountForNotes(
-    payload.requested_amount,
-  );
+  const requestedAmount = parseRequestedAmount(formData.get("requested_amount"));
+  const requestedAmountNote = formatRequestedAmountForNotes(requestedAmount);
   const { data: deal, error } = await supabase
     .from("deals")
     .insert({
@@ -403,6 +404,7 @@ export async function createDeal(formData: FormData) {
       nsf_count: Number(payload.nsf_count),
       deposits: Number(payload.deposits),
       fico: Number(payload.fico),
+      requested_amount: requestedAmount,
       notes: payload.notes,
       internal_notes: appendNoteLine(
         payload.internal_notes,

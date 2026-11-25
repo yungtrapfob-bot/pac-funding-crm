@@ -40,7 +40,7 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
         <h3 className="text-base font-semibold">Financial Snapshot</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label="Monthly Revenue"><Input name="monthly_revenue" type="number" defaultValue={lead.monthly_revenue ?? 0} required /></Field>
-          <Field label="Funding Amount Requested"><Input name="requested_amount" type="number" defaultValue={lead.requested_amount ?? 0} /></Field>
+          <Field label="Funding Amount Requested"><Input name="requested_amount" type="number" min="0" max="9999999999.99" step="0.01" defaultValue={lead.requested_amount ?? ''} /></Field>
           <Field label="Positions"><Input name="positions" type="number" defaultValue={lead.positions ?? 0} required /></Field>
           <Field label="NSF Count"><Input name="nsf_count" type="number" defaultValue={lead.nsf_count ?? 0} required /></Field>
           <Field label="Deposits / Month"><Input name="deposits" type="number" defaultValue={lead.deposits ?? 0} required /></Field>
