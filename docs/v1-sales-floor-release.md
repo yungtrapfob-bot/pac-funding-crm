@@ -8,7 +8,7 @@
    - [Protected deal cleanup](../supabase/migrations/202608070002_admin_deal_cleanup.sql)
    - [Contact, follow-up, and test classification](../supabase/migrations/202608070003_contact_follow_up.sql)
    - [Application document review](../supabase/migrations/202608070004_application_document_review.sql)
-   - [Explicit funding guard](../supabase/migrations/202608070005_guard_funding.sql)
+   - [Funding guard and deal reassignment](../supabase/migrations/202608070005_guard_funding.sql)
 3. Run the complete [verification file](../supabase/release/v1-sales-floor-verify.sql). Every row should say PASS.
 4. Validate the matching application in staging with an administrator and two synthetic reps. Confirm follow-up, document upload, conversion, archive, protected funding history, and reports.
 5. After owner approval, pause intake and funding during the production rollout. Repeat the preflight, migrations, and verification on production using its actual schema and a recoverable backup. Deploy the matching app only after verification. Check sign-in, dashboard and pipeline links, processing, and authorized read-only commission and document access before resuming sales activity.
@@ -25,7 +25,7 @@ The migration files use transactions and rely on the previously applied Sales Pe
 
 ## Admin cleanup
 
-Select the visible leads or deals you want to manage, choose an action, and click Review selection. The review shows record names and specific reasons for blocked records. Confirm only the eligible subset. Converted leads and deals with commercial history are suitable for archive. Recognized commissions stay in the historical ledger. Confirmed deletions record the administrator, record type, count, and timestamp without keeping deleted merchant details. Test designation is separate, and funded records or linked funded records are protected from reclassification.
+Select the visible leads or deals you want to manage, choose an action, and click Review selection. The review shows record names and specific reasons for blocked records. Confirm only the eligible subset. Converted leads and deals with commercial history are suitable for archive. Recognized commissions stay in the historical ledger. Use Reassign for active lead or deal records when moving work between reps. Original attribution is retained. Confirmed deletions record the administrator, record type, count, and timestamp without keeping deleted merchant details. Test designation is separate, and funded records or linked funded records are protected from reclassification.
 
 ## Operational limits
 

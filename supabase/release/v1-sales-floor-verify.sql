@@ -74,4 +74,9 @@ select 'Funding transition is protected', case when exists (
   select from pg_trigger where tgrelid=to_regclass('public.deals')
     and tgname='crm_guard_funding_stage' and tgenabled in ('O','A')
 ) then 'PASS' else 'FAIL' end
+union all
+select 'Admin deal reassignment preserves original attribution', case when exists (
+  select from pg_proc where oid=to_regprocedure('public.crm_reassign_cleanup_deals(uuid[],uuid)')
+    and prosecdef and prosrc like '%public.crm_role()%' and prosrc like '%owner_profile_id%'
+) then 'PASS' else 'FAIL' end
 ) checks order by check_name;

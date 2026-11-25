@@ -87,7 +87,7 @@ async function manageSalesRecords(form: FormData, entity: 'lead' | 'deal'): Prom
     ids: form.getAll('lead_ids'), operation: form.get('operation'),
     mode: form.get('mode'), target: form.get('target') || undefined,
   });
-  if (!parsed.success || (entity === 'deal' && parsed.data.operation === 'reassign')) {
+  if (!parsed.success) {
     return { status: 'error', message: `Choose ${entity}s and an action.` };
   }
   const { ids, operation, mode, target } = parsed.data;
@@ -103,7 +103,9 @@ async function manageSalesRecords(form: FormData, entity: 'lead' | 'deal'): Prom
   if (operation === 'reassign' && !target) return { status: 'error', message: 'Choose an active sales rep.' };
   const { data, error } = entity === 'lead'
     ? await supabase.rpc('crm_sales_manage_leads', { lead_ids: recordIds, operation, target_rep: target ?? null })
-    : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: recordIds, operation });
+    : operation === 'reassign'
+      ? await supabase.rpc('crm_reassign_cleanup_deals', { deal_ids: recordIds, target_rep: target })
+      : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: recordIds, operation });
   if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : `The action could not be completed. No selected ${entity}s were changed.` };
   for (const path of ['/dashboard', '/hot-leads', '/deals', '/admin', '/admin/pipeline', '/admin/processing', '/performance']) revalidatePath(path);
   const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned', mark_test: 'marked as test', clear_test: 'cleared of test designation' }[operation];

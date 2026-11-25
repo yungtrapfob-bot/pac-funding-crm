@@ -27,7 +27,7 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
   const rep = searchParams.rep?.trim() ?? '';
   const supabase = await createClient();
   const { data: reps } = profile.role === 'admin'
-    ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
+    ? await supabase.from('profiles').select('id,full_name,role,is_active').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
     : { data: [] };
   const isAdmin = profile.role === 'admin';
   const archived = isAdmin && searchParams.archived === '1';
@@ -65,5 +65,5 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
     {profile.role === 'admin' ? <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="">All reps</option>{(reps ?? []).map((internalRep) => <option key={internalRep.id} value={internalRep.id}>{internalRep.full_name ?? internalRep.id}</option>)}</select> : null}
     <button className="rounded-md border border-border px-3 py-2 text-sm">Filter</button></form></Card>
   {isAdmin && <Link href={archived ? '/deals' : '/deals?archived=1'} className="inline-block text-sm text-primary hover:underline">{archived ? 'Back to current deals' : 'View archived deals'}</Link>}
-  <DealsTable deals={deals} canManage={isAdmin} /></div>;
+  <DealsTable deals={deals} canManage={isAdmin} reps={(reps ?? []).filter(rep => rep.is_active && rep.role === 'rep')} /></div>;
 }

@@ -261,6 +261,10 @@ begin
   exception when raise_exception then
     assert sqlerrm='The selection changed or contains protected deals. Review it again.';
   end;
+  assert public.crm_reassign_cleanup_deals(array[empty_id],'a0000000-0000-4000-8000-000000000003')=1;
+  assert exists(select 1 from public.deals where id=empty_id
+    and assigned_rep_id='a0000000-0000-4000-8000-000000000003'
+    and owner_profile_id='a0000000-0000-4000-8000-000000000002');
   assert public.crm_manage_deal_cleanup(array[empty_id],'mark_test')=1;
   assert (select sales_test from public.deals where id=empty_id);
   assert public.crm_manage_deal_cleanup(array[empty_id],'clear_test')=1;

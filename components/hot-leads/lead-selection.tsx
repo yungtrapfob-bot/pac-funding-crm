@@ -46,7 +46,7 @@ export function LeadSelection({ leads, children, reps = [], entity = 'lead' }: {
           <select aria-label={entity === 'lead' ? 'Lead actions' : 'Deal actions'} name="operation" value={operation} disabled={pending || !selected.length}
             onChange={e => setOperation(e.target.value)} className="rounded border border-border px-2 py-1">
             <option value="">Choose action</option>
-            {Object.entries(operations).filter(([id]) => entity === 'lead' || id !== 'reassign').map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            {Object.entries(operations).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
           </select>
         </label>
         <span>{selected.length} selected</span>

@@ -31,4 +31,26 @@ create trigger crm_guard_funding_stage
   before update of current_stage, funded_date, funded_amount, gross_commission, gross_psf on public.deals
   for each row execute function public.crm_guard_funding_stage();
 
+create or replace function public.crm_reassign_cleanup_deals(deal_ids uuid[], target_rep uuid)
+returns integer language plpgsql security definer set search_path = ''
+as $$
+declare changed integer;
+begin
+  if public.crm_role() is distinct from 'admin' then raise exception 'Admin access required.'; end if;
+  if coalesce(cardinality(deal_ids),0) not between 1 and 100 then raise exception 'Select between 1 and 100 deals.'; end if;
+  perform id from public.profiles where id=target_rep and is_active and role='rep' for update;
+  if not found then raise exception 'Choose an active sales rep.'; end if;
+  perform id from public.deals where id=any(deal_ids) order by id for update;
+  if exists(select from public.crm_deal_cleanup_eligibility(deal_ids,'reassign') where reason is not null) then
+    raise exception 'The selection changed or contains protected deals. Review it again.';
+  end if;
+  update public.deals set owner_profile_id=coalesce(owner_profile_id,assigned_rep_id),assigned_rep_id=target_rep
+    where id=any(deal_ids);
+  get diagnostics changed = row_count;
+  return changed;
+end;
+$$;
+revoke all on function public.crm_reassign_cleanup_deals(uuid[],uuid) from public, anon, authenticated;
+grant execute on function public.crm_reassign_cleanup_deals(uuid[],uuid) to authenticated;
+
 commit;

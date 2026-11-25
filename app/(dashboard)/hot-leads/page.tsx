@@ -95,7 +95,7 @@ export default async function HotLeadsPage({
   }
   if (sort === 'stale_followups') {
     hotLeads = hotLeads
-      .filter((lead) => lead.next_follow_up_date && new Date(lead.next_follow_up_date).getTime() < now)
+      .filter((lead) => lead.next_follow_up_date && followUpBucket(lead.next_follow_up_date, now, lead.created_at) === 'overdue')
       .sort((a, b) => new Date(a.next_follow_up_date).getTime() - new Date(b.next_follow_up_date).getTime());
   }
 

@@ -127,7 +127,7 @@ as $$
 begin
   if public.crm_role() is distinct from 'admin' then raise exception 'Admin access required.'; end if;
   if coalesce(cardinality(deal_ids),0) not between 1 and 100
-    or operation is null or operation not in ('delete','archive','restore','mark_test','clear_test') then
+    or operation is null or operation not in ('delete','archive','restore','mark_test','clear_test','reassign') then
     raise exception 'Select between 1 and 100 deals and a valid action.';
   end if;
   return query
@@ -136,6 +136,9 @@ begin
       when d.id is null then 'Deal no longer exists.'
       when operation='archive' and d.archived_at is not null then 'Already archived.'
       when operation='restore' and d.archived_at is null then 'Not archived.'
+      when operation='reassign' and (d.archived_at is not null or d.sales_lost
+        or d.current_stage::text in ('Killed','KIF') or public.crm_deal_has_financial_history(d))
+        then 'Only active deals without protected financial history can be reassigned.'
       when operation in ('mark_test','clear_test') and public.crm_deal_has_financial_history(d)
         then 'Funding or commission history is protected.'
       when operation in ('mark_test','clear_test') and (d.converted_from_hot_lead_id is not null
