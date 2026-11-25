@@ -16,11 +16,20 @@ insert into public.hot_leads (id, business_name, owner_name, phone, email, assig
   ('b0000000-0000-4000-8000-000000000002', 'QA temporary A', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000002'),
   ('b0000000-0000-4000-8000-000000000003', 'QA temporary B', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000003');
 insert into public.activities (hot_lead_id, actor_id, activity_type) values
+  ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity'),
   ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity');
 -- Intentionally no timeline conversion row. The direct foreign key must protect this lead.
 insert into public.deals (id, business_name, owner_name, phone, email, assigned_rep_id, converted_from_hot_lead_id)
 values ('c0000000-0000-4000-8000-000000000001', 'QA deal', 'Synthetic', '5550100', 'qa@example.test',
         'a0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000001');
+do $$
+begin
+  begin
+    delete from public.hot_leads where id = 'b0000000-0000-4000-8000-000000000001';
+    raise exception 'Expected the direct deal reference to prevent deletion';
+  exception when foreign_key_violation then null;
+  end;
+end $$;
 insert into public.offers (id, deal_id, funder, approval_amount)
 values ('d0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-000000000001', 'QA Funder', 10000);
 insert into public.deal_files (deal_id, file_type, path)
@@ -142,6 +151,7 @@ begin
   assert not exists (select 1 from public.activities where hot_lead_id = 'b0000000-0000-4000-8000-000000000002'), 'Lead timeline cascade';
   assert public.crm_manage_hot_leads(array['b0000000-0000-4000-8000-000000000001'::uuid], true) = 1;
   assert exists (select 1 from public.deals where id = 'c0000000-0000-4000-8000-000000000001'), 'Archive preserves converted deal';
+  assert exists (select 1 from public.activities where hot_lead_id = 'b0000000-0000-4000-8000-000000000001'), 'Archive preserves lead timeline';
   assert exists (select 1 from public.commissions where deal_id = 'c0000000-0000-4000-8000-000000000001'), 'Archive preserves commission';
 end $$;
 

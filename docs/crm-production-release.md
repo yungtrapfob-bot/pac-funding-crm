@@ -27,12 +27,16 @@ An inactive profile loses CRM database access even if its existing access token 
 
 ## Release order
 
-1. Use a separate staging Supabase project and Vercel preview for verification. Capture production schema and migration history read-only, confirm the existing active admin profiles are legitimate, and take a recoverable backup before the production cutover.
+1. Use a separate staging Supabase project and Vercel preview for verification. Capture production schema and migration history read-only, confirm the existing active admin profiles are legitimate, and take a recoverable backup before the production cutover. Review the project’s existing policies, grants and public security-definer functions for deployment-specific additions.
 2. On an existing database with the preceding migrations, apply [202608050001_crm_access_and_lead_lifecycle.sql](../supabase/migrations/202608050001_crm_access_and_lead_lifecycle.sql) once in a release window, before deploying the app. The transaction adds archive and account state, indexes, and permission changes. Old app builds have incompatible lead and document write/download paths. Coordinate the two releases and keep traffic on a maintenance page if there is a gap.
 3. The historical backfill files were repaired for fresh databases. An already-applied historical migration should stay in migration history. Compare existing definitions before applying any missing historical migration. For a fresh scratch instance, apply files individually in lexical filename order. Two historical files share the numeric version `202605200001`, which version-based migration tools may reject. Preserve the production migration ledger when reconciling that history.
 4. In Supabase Auth, disable **Allow new users to sign up** and any unneeded provider that enables public enrollment. Keep email/password enabled and keep the approved site and callback URLs. The CRM's magic-link form only requests links for existing Auth users.
 5. In Vercel confirm `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and the server-only `SUPABASE_SERVICE_ROLE_KEY` match the target project. Ensure Preview uses staging values. The download endpoint uses the existing service key after checking the caller's session and authorized file row. No new Vercel variable is required. Use Node.js 22 or newer on Vercel for the locked dependency versions. Node.js 24 was used for validation.
 6. With a synthetic fixture, check one administrator and two reps. Exercise sign-in, creation, attribution, Pacific follow-up and notes, conversion with multiple documents, processing, offer selection, funding and commissions, then verify cross-rep requests fail. Check single and bulk deletion, archive, account state and an already-issued rep session. Review existing URL lifetimes and allow previously issued signed document URLs to expire before treating browser download access as fully cut over.
+
+## Dependencies
+
+The lockfile pins patched versions of Next.js, React and Zod and resolves Next's PostCSS dependency to the patched version. Validate with `npm ci` and `npm audit`.
 
 ## Schema checked into the repository
 
