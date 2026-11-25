@@ -1,3 +1,4 @@
+import { ApplicationDocumentReview, UploadDocumentsButton } from '@/components/deals/application-document-review';
 import { SalesActions } from '@/components/sales/sales-actions';
 import { SalesTimeline } from '@/components/sales/timeline';
 import { FunderTracker } from '@/components/sales/funder-tracker';
@@ -82,7 +83,7 @@ export default async function DealDetailPage({
   const deal = dealRows?.[0] ?? null;
   if (!deal) return <p>Deal not found.</p>;
   const [{ data: queue }, { data: processors }] = await Promise.all([
-    supabase.from('crm_sales_deal_queue').select('queue_stage').eq('id',deal.id).maybeSingle(),
+    supabase.from('crm_sales_deal_queue').select('queue_stage,has_documents').eq('id',deal.id).maybeSingle(),
     isAdmin ? supabase.from('profiles').select('id,full_name').eq('is_active',true).order('full_name') : {data:[]},
   ]);
   const queueStage = queue?.queue_stage ?? 'processing';
@@ -528,18 +529,22 @@ export default async function DealDetailPage({
         {searchParams?.upload === 'incomplete' && <p role="alert" className="mb-2 text-sm text-red-800">The application is incomplete. Check the list and attach any missing documents below.</p>}
         {searchParams?.upload === 'missing' && <p role="alert" className="mb-2 text-sm text-red-800">Choose a document to upload.</p>}
         {searchParams?.upload === 'complete' && <p role="status" className="mb-2 text-sm text-emerald-800">Documents uploaded.</p>}
-        <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">
+        {deal.application_review_required && deal.application_reviewed_at && <p className="mb-2 text-sm text-emerald-800">Document review complete.</p>}
+        {deal.application_review_required && !deal.application_reviewed_at && queue?.has_documents && !deal.archived_at
+          && queueStage === 'missing_documents' && <ApplicationDocumentReview id={deal.id} admin={isAdmin} />}
+        {!deal.archived_at && <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">
+          <input type="hidden" name="deal_id" value={deal.id} />
           <label>Signed application<Input type="file" name="application_file" /></label>
           <label>Bank statements<Input type="file" name="bank_statements" multiple /></label>
-          <Button type="submit">Upload documents</Button>
-        </form>
+          <UploadDocumentsButton />
+        </form>}
 
         <div className="space-y-2 text-sm">
           {fileRows.length ? (
             fileRows.map((f) => (
               <div key={f.id} className="rounded border p-3">
-                <p className="font-medium">{f.file_type}</p>
-                <p className="break-all text-muted-foreground">{f.path}</p>
+                <p className="font-medium">{f.file_type === 'application' ? 'Application' : f.file_type === 'statement' ? 'Statement' : f.file_type}</p>
+                <p className="break-all text-muted-foreground">{f.path.split('/').at(-1)?.replace(/^[0-9a-f-]{36}-/i, '')}</p>
                 <Link href={`/api/deal-files/${f.id}`} prefetch={false} className="mt-2 inline-block text-primary underline">
                   Download
                 </Link>

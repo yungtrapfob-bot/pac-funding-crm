@@ -61,4 +61,12 @@ select 'Test designation and document locking safeguards', case when exists (
 ) and exists (
   select from pg_class where oid=to_regclass('public.crm_cleanup_audit') and relrowsecurity
 ) then 'PASS' else 'FAIL' end
+union all
+select 'New applications require document review', case when exists (
+  select from information_schema.columns where table_schema='public' and table_name='deals'
+    and column_name='application_review_required' and column_default='true'
+) and exists (
+  select from pg_proc where oid=to_regprocedure('public.crm_confirm_application_documents(uuid,integer,text)')
+    and prosecdef and prosrc like '%storage.objects%' and prosrc like '%for update%'
+) then 'PASS' else 'FAIL' end
 ) checks order by check_name;

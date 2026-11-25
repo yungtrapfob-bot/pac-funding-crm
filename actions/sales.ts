@@ -41,6 +41,28 @@ export async function recordSalesAction(_: SalesResult, form: FormData): Promise
   return { status: 'success', message: 'Saved.' };
 }
 
+export async function confirmApplicationDocuments(_: SalesResult, form: FormData): Promise<SalesResult> {
+  await requireUser();
+  const parsed = z.object({
+    id: z.guid(),
+    months: z.coerce.number().int().min(1).max(24),
+    exception: z.string().trim().max(500),
+  }).safeParse({ id: form.get('id'), months: form.get('months'), exception: form.get('exception') ?? '' });
+  if (!parsed.success || form.get('reviewed') !== 'yes') {
+    return { status: 'error', message: 'Review the application and enter the verified statement months.' };
+  }
+  const { id, months, exception } = parsed.data;
+  const supabase = await createClient();
+  const { error } = await supabase.rpc('crm_confirm_application_documents', {
+    target_deal_id: id, months, exception_note: exception || null,
+  });
+  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'Could not confirm the application.' };
+  for (const path of [`/deals/${id}`, '/dashboard', '/deals', '/admin', '/admin/processing', '/admin/pipeline', '/performance']) {
+    revalidatePath(path);
+  }
+  return { status: 'success', message: 'Document review complete.' };
+}
+
 const bulkOperation = z.enum(['archive', 'delete', 'restore', 'reassign', 'mark_test', 'clear_test']);
 export type BulkResult = SalesResult & {
   preview?: { operation: string; rows: { id: string; business_name: string; reason: string | null }[] };

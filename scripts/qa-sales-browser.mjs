@@ -128,10 +128,18 @@ try {
   await fill(intake,{industry:'Logistics',state:'CA',fico:'680',requested_amount:'21000'});
   const doc = name => ({name,mimeType:'application/pdf',buffer:Buffer.from('%PDF-1.4 synthetic QA fixture')});
   await intake.locator('[name=application_file]').setInputFiles(doc('application.pdf'));
-  await intake.locator('[name=bank_statements]').setInputFiles([doc('june.pdf'),doc('july.pdf')]);
+  await intake.locator('[name=bank_statements]').setInputFiles([doc('april.pdf'),doc('may.pdf'),doc('june.pdf'),doc('july.pdf')]);
   await intake.locator('button[type=submit]').click();
   await rep.waitForURL(/deals\/[0-9a-f-]+\?converted=1/);
   const deal = new URL(rep.url()).pathname.split('/').at(-1);
+  assert.equal(must(await service.from('crm_sales_events').select('id').eq('deal_id',deal).eq('kind','application_completed')).length,0);
+  const unauthorizedReview = await stranger.client.rpc('crm_confirm_application_documents',{target_deal_id:deal,months:4});
+  assert.match(unauthorizedReview.error?.message ?? '', /unavailable/);
+  await rep.getByLabel('I reviewed the application and statements').check();
+  await rep.getByLabel('Verified statement months').fill('4');
+  await rep.getByRole('button',{name:'Confirm documents',exact:true}).click();
+  await rep.getByText('Document review complete.',{exact:true}).waitFor();
+  assert.equal(must(await service.from('crm_sales_events').select('id').eq('deal_id',deal).eq('kind','application_completed')).length,1);
   const currentLead = must(await service.from('hot_leads').select('*').eq('id',lead).single());
   assert.ok(currentLead.converted_at);
   assert.equal(currentLead.next_follow_up_date,null);
@@ -155,7 +163,7 @@ try {
   assert.equal((await inactive.client.from('crm_sales_deal_queue').select('id')).data.length,0);
   assert.equal((await stranger.client.from('deal_files').select('id').eq('deal_id',deal)).data.length,0);
   const files = must(await service.from('deal_files').select('id,path').eq('deal_id',deal));
-  assert.equal(files.length,3);
+  assert.equal(files.length,5);
   assert.equal((await rep.request.get(base+'/api/deal-files/'+files[0].id)).status(),200);
   assert.ok((await stranger.client.storage.from('deal-files').download(files[0].path)).error);
   assert.ok((await stranger.client.rpc('crm_record_sales_action',{entity:'deal',record_id:deal,action:'note',explanation:'Unauthorized synthetic test'})).error);

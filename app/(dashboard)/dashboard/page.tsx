@@ -34,11 +34,11 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .select('id,deal_id,kind,deals!inner(funded_amount,current_stage)')
       .in('kind', ['application_completed', 'funded']).eq('deals.sales_test', false)
       .gte('occurred_at', month.start).lt('occurred_at', month.cutoff)
-      .order('id').range(from,to)).catch(() => null),
+      .order('id').range(from,to).overrideTypes<MonthlyMilestone[], { merge: false }>()).catch(() => null),
     isAdmin ? Promise.resolve(null) : readPages<MonthlyLedger>((from,to) => supabase.from('commissions')
       .select('id,commission_amount,deals(sales_test)').eq('rep_id', profile.id)
       .gte('recognized_at', month.start).lt('recognized_at', month.cutoff)
-      .order('id').range(from,to)).catch(() => null),
+      .order('id').range(from,to).overrideTypes<MonthlyLedger[], { merge: false }>()).catch(() => null),
   ]);
   const applications = production ? new Set(production.filter(event => event.kind === 'application_completed').map(event => event.deal_id)).size : 'Unavailable';
   const funded = production && [...new Map(production.filter(event => event.kind === 'funded').map(event => [event.deal_id, event.deals])).values()];

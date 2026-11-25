@@ -7,6 +7,7 @@
    - [Admin lead cleanup](../supabase/migrations/202608070001_admin_lead_cleanup.sql)
    - [Protected deal cleanup](../supabase/migrations/202608070002_admin_deal_cleanup.sql)
    - [Contact, follow-up, and test classification](../supabase/migrations/202608070003_contact_follow_up.sql)
+   - [Application document review](../supabase/migrations/202608070004_application_document_review.sql)
 3. Run the complete [verification file](../supabase/release/v1-sales-floor-verify.sql). Every row should say PASS.
 4. Validate the matching application in staging with an administrator and two synthetic reps. Confirm follow-up, document upload, conversion, archive, protected funding history, and reports.
 5. After owner approval, repeat the preflight, migrations, and verification on production using its actual schema and a recoverable backup. Deploy the matching app only after verification. Check sign-in, dashboard and pipeline links, processing, and authorized read-only commission and document access.
@@ -18,7 +19,7 @@ The migration files use transactions and rely on the previously applied Sales Pe
 1. Sign in and open Dashboard. Start with overdue or today's follow-ups.
 2. Click New lead. Enter the business, contact, and either a phone number or an email. Set the next follow-up in Pacific time.
 3. Open the merchant and use Log call, Log text, Log email, or Add note. Saving contact can complete the current follow-up and schedule the next one.
-4. Collect the application and statement files. Paragon typically asks for four months. Click Submit to processing and attach the available files. The processing queue shows incomplete files separately.
+4. Collect the application and statement files. Paragon typically asks for four months. Click Submit to processing and attach the available files. On the deal, open Uploaded Files, review the application and statement coverage, enter the verified months, and click Confirm documents. An administrator can record an exception for fewer than four months. The processing queue shows incomplete or unreviewed files separately.
 5. Open Deals to follow processing, funder responses, the pitch, and contracts. Use My Performance and Commissions for your personal totals.
 
 ## Admin cleanup

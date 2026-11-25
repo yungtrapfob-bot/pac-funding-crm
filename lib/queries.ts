@@ -19,7 +19,7 @@ export async function getProcessingQueue(stage?: string) {
   const [items, reps] = await Promise.all([
     readPages((from,to) => {
       let query = supabase.from('crm_sales_deal_queue')
-        .select('id,business_name,assigned_rep_id,sales_processor_id,queue_stage,has_documents,submitted_at,sales_next_action,sales_follow_up_at')
+        .select('id,business_name,assigned_rep_id,sales_processor_id,queue_stage,has_documents,application_review_required,application_reviewed_at,requested_amount,submitted_at,sales_next_action,sales_follow_up_at')
         .eq('sales_test', false).is('archived_at', null).order('submitted_at').order('id');
       query = stage ? query.eq('queue_stage', stage) : query.in('queue_stage', ['missing_documents','processing','submitted','underwriting','stipulations']);
       return query.range(from,to);

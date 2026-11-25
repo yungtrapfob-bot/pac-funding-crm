@@ -75,4 +75,11 @@ select 'Existing role-scoped sales action RPC' as check_name, case when exists (
   select from pg_proc where oid=to_regprocedure('public.crm_record_sales_action(text,uuid,text,text,text,timestamptz)')
     and prosecdef and prosrc like '%public.crm_role()%' and prosrc like '%for update%'
 ) then 'PASS' else 'FAIL' end as status
+union all
+select 'Document review prerequisites', case when
+  to_regprocedure('public.crm_sales_deal_evidence()') is not null
+  and exists (select from pg_trigger where tgrelid=to_regclass('public.deal_files')
+    and tgname='crm_sales_document_evidence' and tgenabled in ('O','A'))
+  and coalesce(has_table_privilege(current_user,to_regclass('storage.objects'),'TRIGGER'),false)
+then 'PASS' else 'FAIL' end
 ) checks order by check_name;
