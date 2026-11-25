@@ -442,7 +442,8 @@ export async function manageHotLeads(
   formData: FormData,
 ): Promise<ManageLeadsState> {
   await requireRole(["admin"]);
-  const result = z.array(z.string().uuid()).min(1).max(100).safeParse(formData.getAll("lead_ids"));
+  // PostgreSQL UUID columns also accept IDs outside the RFC version and variant ranges.
+  const result = z.array(z.guid()).min(1).max(100).safeParse(formData.getAll("lead_ids"));
   const operation = formData.get("operation");
   if (!result.success || (operation !== "archive" && operation !== "delete")) {
     return { status: "error", message: "Select between 1 and 100 leads and confirm an action." };
