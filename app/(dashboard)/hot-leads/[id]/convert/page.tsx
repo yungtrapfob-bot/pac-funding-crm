@@ -9,7 +9,7 @@ export default async function ConvertHotLeadPage({ params: pendingParams }: { pa
   const { profile } = await requireUser();
   const supabase = await createClient();
 
-  let leadQuery = supabase.from('hot_leads').select('*').eq('id', params.id).is('archived_at', null);
+  let leadQuery = supabase.from('hot_leads').select('*').eq('id', params.id).is('archived_at', null).is('converted_at', null).eq('sales_lost', false).eq('sales_review', false);
   if (profile.role === 'rep') leadQuery = leadQuery.eq('assigned_rep_id', profile.id);
 
   const { data: lead } = await leadQuery.maybeSingle();

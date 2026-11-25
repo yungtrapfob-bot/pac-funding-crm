@@ -1,101 +1,31 @@
-import { pacificDate } from '@/lib/pacific-time';
 import { readPages } from '@/lib/supabase/read-pages';
 import { createClient } from '@/lib/supabase/server';
 import { requireRole } from '@/lib/auth';
 import type { UserRole } from '@/types/db';
-import { toUiPipelineStage } from '@/lib/utils';
 
 export async function getDeals(role: UserRole, userId: string, repFilterId?: string) {
   const supabase = await createClient();
-  let query = supabase
-    .from('deals')
-    .select('*, assigned_rep:assigned_rep_id(full_name)')
-    .order('submitted_at', { ascending: false });
+  let query = supabase.from('deals').select('*, assigned_rep:assigned_rep_id(full_name)')
+    .order('submitted_at', { ascending: false }).order('id');
   if (role === 'rep') query = query.eq('assigned_rep_id', userId);
   if (role === 'admin' && repFilterId) query = query.eq('assigned_rep_id', repFilterId);
-  const { data } = await query;
-  return data ?? [];
+  return readPages((from, to) => query.range(from, to));
 }
 
-export async function getProcessingQueue() {
+export async function getProcessingQueue(stage?: string) {
   await requireRole(['admin']);
   const supabase = await createClient();
-  const { data: deals } = await supabase
-    .from('deals')
-    .select('id,business_name,owner_name,monthly_revenue,fico,positions,nsf_count,deposits,submitted_at,current_stage,notes,internal_notes,assigned_rep:assigned_rep_id(full_name)')
-    .order('submitted_at', { ascending: false });
-
-  const dealIds = (deals ?? []).map((deal) => deal.id);
-  if (!dealIds.length) return [];
-
-  const { data: files } = await supabase
-    .from('deal_files')
-    .select('deal_id,file_type')
-    .in('deal_id', dealIds);
-
-  const filesByDeal = new Map<string, Set<string>>();
-  for (const file of files ?? []) {
-    const existing = filesByDeal.get(file.deal_id) ?? new Set<string>();
-    existing.add(String(file.file_type ?? '').toLowerCase());
-    filesByDeal.set(file.deal_id, existing);
-  }
-
-  return (deals ?? []).map((deal) => {
-    const fileTypes = filesByDeal.get(deal.id) ?? new Set<string>();
-    return {
-      ...deal,
-      hasApplication: fileTypes.has('application'),
-      hasStatements: fileTypes.has('statement'),
-      hasFiles: fileTypes.size > 0
-    };
-  });
-}
-
-export async function getDashboardMetrics(role: UserRole, userId: string) {
-  const supabase = await createClient();
-  let dealsQuery = supabase
-    .from('deals')
-    .select('id,current_stage,funded_amount,assigned_rep_id');
-  if (role === 'rep') dealsQuery = dealsQuery.eq('assigned_rep_id', userId);
-
-
-  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,follow_up_status,outcome_tag').is('archived_at', null);
-  if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
-
-
-  const [deals, hotLeads] = await Promise.all([
-    readPages((from, to) => dealsQuery.order('id').range(from, to)),
-    readPages((from, to) => leadsQuery.order('id').range(from, to)),
+  const [items, reps] = await Promise.all([
+    readPages((from,to) => {
+      let query = supabase.from('crm_sales_deal_queue')
+        .select('id,business_name,assigned_rep_id,sales_processor_id,queue_stage,has_documents,submitted_at,sales_next_action,sales_follow_up_at')
+        .eq('sales_test', false).order('submitted_at').order('id');
+      query = stage ? query.eq('queue_stage', stage) : query.in('queue_stage', ['missing_documents','processing','submitted','underwriting','stipulations']);
+      return query.range(from,to);
+    }),
+    readPages((from,to) => supabase.from('profiles').select('id,full_name').order('id').range(from,to)),
   ]);
-
-  const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
-    if (!dealStage) return false;
-    if (acceptedRawStages.includes(dealStage)) return true;
-    return acceptedUiStages.includes(toUiPipelineStage(dealStage));
-  };
-
-  const funded = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded');
-  const kif = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF');
-
-  const today = pacificDate(new Date());
-  const dueToday = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today).length;
-  const overdueFollowups = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) < today).length;
-
-  return {
-    totalDeals: deals.length,
-    underwriting: deals.filter((d) => hasStage(d.current_stage, ['Application Submitted', 'Application Processed', 'In Underwriting'], ['In Underwriting'])).length,
-    offers: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Offers').length,
-    contractsOut: deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Contracts Out').length,
-    fundedDeals: funded.length,
-    kifDeals: kif.length,
-    fundedAmount: funded.reduce((sum, d) => sum + Number(d.funded_amount ?? 0), 0),
-    totalHotLeads: hotLeads.length,
-    dueToday,
-    overdueFollowups,
-    readyForUnderwriting: hotLeads.filter((l) => {
-      const status = String(l.follow_up_status ?? '').toLowerCase();
-      const outcome = String(l.outcome_tag ?? '').toLowerCase();
-      return status === 'scheduled' || outcome.includes('underwriting') || outcome.includes('docs requested');
-    }).length
-  };
+  const names = new Map(reps.map(rep => [rep.id,rep.full_name]));
+  return items.map(row => ({ ...row, assigned_name: names.get(row.assigned_rep_id),
+    processor_name: names.get(row.sales_processor_id) }));
 }

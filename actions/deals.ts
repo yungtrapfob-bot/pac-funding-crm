@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { requireRole, requireUser } from "@/lib/auth";
 import { pacificDate, pacificInputValue, parsePacificInput } from "@/lib/pacific-time";
-import { PIPELINE_STAGES, toDbPipelineStage } from "@/lib/utils";
+import { PIPELINE_STAGES } from "@/lib/utils";
 
 const followUpStatusSchema = z.enum([
   "pending",
@@ -150,7 +150,7 @@ export async function updateHotLead(formData: FormData) {
   const { data: existingLead, error: existingLeadError } = await supabase
     .from("hot_leads")
     .select("id,assigned_rep_id,next_follow_up_date")
-    .eq("id", leadId).is("archived_at", null)
+    .eq("id", leadId).is("archived_at", null).is("converted_at", null).eq("sales_lost", false).eq("sales_review", false)
     .maybeSingle();
   if (existingLeadError) throw new Error(existingLeadError.message);
   if (!existingLead) throw new Error("Hot lead not found or access denied.");
@@ -179,7 +179,7 @@ export async function updateHotLead(formData: FormData) {
       outcome_tag: p.outcome_tag,
       last_contact_date: pacificDate(new Date()),
     })
-    .eq("id", leadId);
+    .eq("id", leadId).is("archived_at", null).is("converted_at", null).eq("sales_lost", false).eq("sales_review", false);
 
   if (error) throw new Error(error.message);
 
@@ -271,7 +271,7 @@ export type ConvertLeadFormState = {
 
 export async function startHotLeadConversion(formData: FormData) {
   await requireUser();
-  const leadId = z.string().uuid().parse(formData.get("hot_lead_id"));
+  const leadId = z.guid().parse(formData.get("hot_lead_id"));
   redirect(`/hot-leads/${leadId}/convert`);
 }
 
@@ -279,7 +279,7 @@ export async function submitHotLeadConversion(
   _: ConvertLeadFormState,
   formData: FormData,
 ): Promise<ConvertLeadFormState> {
-  const { user, profile } = await requireUser();
+  const { profile } = await requireUser();
   const supabase = await createClient();
 
   const leadId = String(formData.get("hot_lead_id") ?? "");
@@ -313,7 +313,6 @@ export async function submitHotLeadConversion(
   const requestedAmount = Number(formData.get("requested_amount") ?? 0);
   const requestedAmountNote = formatRequestedAmountForNotes(requestedAmount);
   const files = getFileEntries(formData);
-  if (!hasRequiredDealFiles(files)) return { status: "error", message: "Attach a signed application and at least one bank statement." };
   const payload = {
     business_name: String(formData.get("business_name") ?? ""),
     owner_name: String(formData.get("owner_name") ?? ""),
@@ -343,33 +342,24 @@ export async function submitHotLeadConversion(
     .insert(payload)
     .select("id")
     .single();
-  if (dealError || !deal)
-    return {
-      status: "error",
-      message: dealError?.message ?? "Unable to create deal from intake.",
-    };
+  if (dealError || !deal) {
+    const { data: existing } = await supabase.from("deals").select("id")
+      .eq("converted_from_hot_lead_id", lead.id).order("id").limit(1).maybeSingle();
+    if (existing) redirect(`/deals/${existing.id}?upload=incomplete`);
+    return { status: "error", message: "Could not convert this lead. Verify it is still active and assigned." };
+  }
 
-  const { error: activityError } = await supabase.from("activities").insert({
-    hot_lead_id: lead.id,
-    deal_id: deal.id,
-    actor_id: user.id,
-    activity_type: "hot_lead_converted",
-    details: {
-      source: "underwriting_intake",
-      requested_amount: Number.isFinite(requestedAmount)
-        ? requestedAmount
-        : null,
-    },
-  });
+  // The deal, conversion event and lead closure commit together. Files are
+  // retryable; completion is recorded only when both document types exist.
   const uploadError = await uploadDealFiles(supabase, deal.id, files);
-  if (activityError) console.error("[conversion] Could not add timeline entry", { code: activityError.code });
+  const incomplete = uploadError || !hasRequiredDealFiles(files);
 
   revalidatePath("/dashboard");
   revalidatePath("/admin/processing");
   revalidatePath("/hot-leads");
   revalidatePath("/deals");
   revalidatePath(`/deals/${deal.id}`);
-  redirect(`/deals/${deal.id}?${uploadError ? "upload=incomplete" : "converted=1"}`);
+  redirect(`/deals/${deal.id}?${incomplete ? "upload=incomplete" : "converted=1"}`);
 }
 
 function hasRequiredDealFiles(files: ReturnType<typeof getFileEntries>) {
@@ -378,7 +368,7 @@ function hasRequiredDealFiles(files: ReturnType<typeof getFileEntries>) {
 
 export async function addDealDocuments(formData: FormData) {
   const { profile } = await requireUser();
-  const dealId = z.string().uuid().parse(formData.get("deal_id"));
+  const dealId = z.guid().parse(formData.get("deal_id"));
   const supabase = await createClient();
   const { data: deal } = await supabase.from("deals").select("id,assigned_rep_id").eq("id", dealId).maybeSingle();
   if (!deal || (profile.role !== "admin" && deal.assigned_rep_id !== profile.id)) redirect("/deals");
@@ -394,7 +384,6 @@ export async function createDeal(formData: FormData) {
   const supabase = await createClient();
   const assignedRepId = await resolveProfileIdForUser();
   const files = getFileEntries(formData);
-  if (!hasRequiredDealFiles(files)) redirect("/deals/new?upload=missing");
   const payload = Object.fromEntries(formData);
   const requestedAmountNote = formatRequestedAmountForNotes(
     payload.requested_amount,
@@ -432,40 +421,7 @@ export async function createDeal(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/deals");
   revalidatePath(`/deals/${deal.id}`);
-  redirect(`/deals/${deal.id}${uploadError ? "?upload=incomplete" : ""}`);
-}
-
-export type ManageLeadsState = { status: "idle" | "success" | "error"; message?: string };
-
-export async function manageHotLeads(
-  _: ManageLeadsState,
-  formData: FormData,
-): Promise<ManageLeadsState> {
-  await requireRole(["admin"]);
-  // PostgreSQL UUID columns also accept IDs outside the RFC version and variant ranges.
-  const result = z.array(z.guid()).min(1).max(100).safeParse(formData.getAll("lead_ids"));
-  const operation = formData.get("operation");
-  if (!result.success || (operation !== "archive" && operation !== "delete")) {
-    return { status: "error", message: "Select between 1 and 100 leads and confirm an action." };
-  }
-
-  const supabase = await createClient();
-  const { data: count, error } = await supabase.rpc("crm_manage_hot_leads", {
-    lead_ids: [...new Set(result.data)],
-    archive_converted: operation === "archive",
-  });
-  if (error) {
-    console.error("[hot-leads] lifecycle operation failed", { code: error.code, message: error.message });
-    const message = error.code === "P0001" ? error.message
-      : error.code === "23503" ? "One or more leads have linked records. No leads were deleted."
-      : "Could not complete the action. Refresh the list and try again.";
-    return { status: "error", message };
-  }
-
-  revalidatePath("/hot-leads");
-  revalidatePath("/dashboard");
-  revalidatePath("/admin");
-  return { status: "success", message: `${count} ${count === 1 ? "lead" : "leads"} ${operation === "archive" ? "archived" : "deleted"}.` };
+  redirect(`/deals/${deal.id}${uploadError || !hasRequiredDealFiles(files) ? "?upload=incomplete" : ""}`);
 }
 
 export async function updateDealDetails(formData: FormData) {
@@ -528,20 +484,31 @@ export async function addOffer(formData: FormData) {
         ? totalPayback
         : null,
     stipulations: p.stipulations || null,
-    notes: declineReason ?? (p.notes || null),
+    notes: p.notes || null,
+    decline_reason: declineReason,
+    decision,
     status,
   };
-  const { error } = await supabase.from("offers").insert(offerPayload);
-  if (error) throw new Error(error.message);
+  const revised = z.guid().safeParse(p.revise_offer_id);
+  const result = revised.success
+    ? await supabase.from("offers").update({ ...offerPayload, updated_at: new Date().toISOString() })
+        .eq("id", revised.data).eq("deal_id", String(p.deal_id)).in("status", ["open", "declined"]).select("id").maybeSingle()
+    : await supabase.from("offers").insert(offerPayload).select("id").single();
+  const { error } = result;
+  if (!result.data && !error) redirect(`/deals/${p.deal_id}?offer_error=1`);
+  if (error) redirect(`/deals/${p.deal_id}?offer_error=1`);
   revalidatePath(`/deals/${p.deal_id}`);
+  revalidatePath("/admin");
+  revalidatePath("/dashboard");
+  revalidatePath("/performance");
   redirect(`/deals/${p.deal_id}?saved=offer`);
 }
 
 export async function selectOffer(formData: FormData) {
   await requireUser();
   const supabase = await createClient();
-  const dealId = z.string().uuid().parse(formData.get("deal_id"));
-  const offerId = z.string().uuid().parse(formData.get("offer_id"));
+  const dealId = z.guid().parse(formData.get("deal_id"));
+  const offerId = z.guid().parse(formData.get("offer_id"));
   const { error } = await supabase.rpc("crm_select_offer", {
     target_deal: dealId,
     target_offer: offerId,
@@ -560,11 +527,10 @@ export async function updateDealStage(formData: FormData) {
   const p = Object.fromEntries(formData);
   const dealId = String(p.deal_id);
   const nextStage = dealStageSchema.parse(String(p.current_stage));
-  const { error } = await supabase
-    .from("deals")
-    .update({ current_stage: toDbPipelineStage(nextStage) })
-    .eq("id", dealId);
-  if (error) throw new Error(error.message);
+  const { error } = await supabase.rpc("crm_set_sales_deal_stage", {
+    record_id: dealId, stage_label: nextStage,
+  });
+  if (error) redirect(`/deals/${dealId}?saved=stage_error#sales-actions`);
   revalidatePath(`/deals/${dealId}`);
   revalidatePath("/admin/pipeline");
   revalidatePath("/deals");

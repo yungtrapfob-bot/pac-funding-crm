@@ -1,3 +1,6 @@
+import { SalesActions } from '@/components/sales/sales-actions';
+import { SalesTimeline } from '@/components/sales/timeline';
+import { leadStages } from '@/lib/sales-labels';
 import Link from 'next/link';
 import { startHotLeadConversion, updateHotLead } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
@@ -17,6 +20,8 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
 
   const { data: lead } = await leadQuery.maybeSingle();
   if (!lead) return <p>Lead not found.</p>;
+
+  const historical = Boolean(lead.archived_at || lead.converted_at || lead.sales_review);
 
   const { data: activityRows } = await supabase
     .from('activities')
@@ -50,13 +55,13 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{lead.business_name}</h1>
-            <p className="text-sm text-muted-foreground">Lead workbench: follow-up, notes, callbacks, and conversion readiness.</p>
+            <p className="text-sm text-muted-foreground">{lead.sales_review ? 'Conversion needs review' : lead.converted_at ? 'Converted' : lead.archived_at ? 'Archived' : lead.sales_lost ? 'Lost' : leadStages[lead.sales_stage as keyof typeof leadStages]}{lead.sales_test && ' · Test record'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : lead.archived_at ? null : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
+            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : historical || lead.sales_lost ? null : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to deal</Button></form>}
           </div>
         </div>
-        {lead.archived_at ? <p>Archived lead</p> : <form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {!historical && !lead.sales_lost && <details><summary className="cursor-pointer text-sm font-medium">Edit contact details</summary><form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input type="hidden" name="id" value={lead.id} />
           <Input name="business_name" defaultValue={lead.business_name} />
           <Input name="owner_name" defaultValue={lead.owner_name} />
@@ -67,9 +72,15 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
           <Input name="outcome_tag" defaultValue={lead.outcome_tag ?? ''} placeholder="Outcome tag (interested, docs requested, not qualified, etc.)" className="md:col-span-2" />
           <textarea name="activity_note" placeholder="Add follow-up activity note (new timeline entry)" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
           <Button type="submit" className="md:col-span-2">Save lead updates</Button>
-        </form>}
+        </form></details>}
       </Card>
 
+      {!historical && <Card id="sales-actions"><h2 className="mb-2 text-lg font-medium">Next action</h2>
+        {lead.next_follow_up_date && <p className="mb-2 text-sm">Follow-up · {formatPacificDateTime(lead.next_follow_up_date)} (Pacific)</p>}
+        <SalesActions entity="lead" id={lead.id} admin={profile.role === 'admin'} lost={Boolean(lead.sales_lost)}
+          hasTask={Boolean(lead.next_follow_up_date)} source={lead.sales_source ?? undefined} isTest={Boolean(lead.sales_test)} />
+      </Card>}
+      <Card><h2 className="mb-2 text-lg font-medium">Sales history</h2><SalesTimeline entity="lead" id={lead.id} /></Card>
       <Card>
         <h2 className="mb-2 text-lg font-medium">Activity Timeline</h2>
         <div className="space-y-2">
