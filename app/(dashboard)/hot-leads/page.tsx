@@ -16,10 +16,10 @@ function getSortLabel(sort: SortMode) {
 }
 
 function getStatusChip(status: string) {
-  if (status === 'pending' || status === 'scheduled') return 'bg-warning/20 text-warning';
-  if (status === 'contacted') return 'bg-info/20 text-info';
+  if (status === 'pending' || status === 'scheduled') return 'bg-amber-50 text-amber-900';
+  if (status === 'contacted') return 'bg-blue-50 text-blue-900';
   if (status === 'stale') return 'bg-slate-100 text-slate-700';
-  return 'bg-success/20 text-success';
+  return 'bg-emerald-50 text-emerald-900';
 }
 
 export default async function HotLeadsPage({

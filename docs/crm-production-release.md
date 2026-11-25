@@ -8,6 +8,17 @@ The checked-in schema also had self-referencing profile policies. PostgreSQL rep
 
 The replacement locks the selected rows and checks both kinds of linkage before writing. Unlinked test leads and their lead-only activity are deleted in the same transaction. Converted or otherwise deal-linked leads can be archived, retaining their source record, deals, timeline and financial records. No deployment step deletes any leads.
 
+## Security findings
+
+| Severity | Finding | Change |
+| --- | --- | --- |
+| Critical | Profile recovery and admin reconciliation treated user-editable Auth metadata as a role source. | Only provisioned profiles grant CRM roles. User creation provisions reps directly. |
+| Critical | The original dependency resolution had critical Next.js advisories. | Pin patched Next.js, React, PostCSS and Zod versions with a committed lockfile. |
+| High | Commission synchronization ran with elevated privileges and lacked a caller check. Rep deal inserts were not limited to intake fields. | Restrict the commission function and run the unchanged calculation from the funded-deal trigger. Limit rep inserts to intake fields. |
+| High | Old sessions were not tied to account state. Project users with document read access could obtain reusable direct links. | RLS checks active account state and rejects sessions from before deactivation after reactivation. Rep downloads use a request-scoped authorization check. |
+| High | The profile policy queried its own protected table. Older allow policies could also be present alongside current grants. | Use a constrained role helper and restrictive policies for assignment, administration and storage. |
+| Medium | An Auth callback used caller-supplied redirect text, and magic link requests allowed new accounts by default. | Redirect to the CRM dashboard and request magic links for existing users. Disable public enrollment on Supabase. |
+
 ## Permissions
 
 | Operation | Active rep | Active admin |
