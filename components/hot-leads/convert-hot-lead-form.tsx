@@ -1,7 +1,7 @@
 'use client';
 
-import type { ReactNode } from 'react';
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState, type ReactNode } from 'react';
+import { useFormStatus } from 'react-dom';
 import { submitHotLeadConversion, type ConvertLeadFormState } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,10 +11,10 @@ const initialState: ConvertLeadFormState = { status: 'idle' };
 type LeadIntake = { id: string; business_name: string | null; owner_name: string | null; phone: string | null; email: string | null; industry: string | null; monthly_revenue: number | null; requested_amount: number | null; time_in_business_months: number | null; state: string | null; positions: number | null; nsf_count: number | null; deposits: number | null; fico: number | null; notes: string | null; };
 
 export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
-  const [state, formAction] = useFormState(submitHotLeadConversion, initialState);
+  const [state, formAction] = useActionState(submitHotLeadConversion, initialState);
 
   return (
-    <form action={formAction} className="space-y-5" encType="multipart/form-data">
+    <form action={formAction} className="space-y-5">
       <input type="hidden" name="hot_lead_id" value={lead.id} />
 
       <section className="space-y-3">
@@ -50,14 +50,14 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
 
       <section className="space-y-3">
         <h3 className="text-base font-semibold">Notes</h3>
-        <Field label="Notes"><textarea name="notes" defaultValue={lead.notes ?? ''} className="min-h-24 rounded-md border p-2 text-sm" /></Field>
-        <Field label="Internal Notes"><textarea name="internal_notes" className="min-h-24 rounded-md border p-2 text-sm" /></Field>
+        <Field label="Notes"><textarea name="notes" defaultValue={lead.notes ?? ''} className="min-h-24 rounded-md border border-border bg-card p-2 text-sm text-foreground" /></Field>
+        <Field label="Internal Notes"><textarea name="internal_notes" className="min-h-24 rounded-md border border-border bg-card p-2 text-sm text-foreground" /></Field>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-base font-semibold">File Uploads</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Application File (single)"><Input type="file" name="application_file" /><span className="text-xs text-muted-foreground">Attach one signed application if available.</span></Field>
+          <Field label="Application File (single)"><Input type="file" name="application_file" required /><span className="text-xs text-muted-foreground">Attach one signed application.</span></Field>
           <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple required /><span className="text-xs text-muted-foreground">Select all statement months and supporting docs before submitting.</span></Field>
         </div>
       </section>

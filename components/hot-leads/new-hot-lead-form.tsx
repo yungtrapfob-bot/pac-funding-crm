@@ -1,6 +1,7 @@
 'use client';
 
-import { useFormState, useFormStatus } from 'react-dom';
+import { useActionState } from 'react';
+import { useFormStatus } from 'react-dom';
 import { createHotLead, type HotLeadFormState } from '@/actions/deals';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -18,7 +19,7 @@ function ErrorText({ message }: { message?: string[] }) {
 }
 
 export function NewHotLeadForm() {
-  const [state, formAction] = useFormState(createHotLead, initialState);
+  const [state, formAction] = useActionState(createHotLead, initialState);
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -36,7 +37,7 @@ export function NewHotLeadForm() {
       <div><Input type="number" name="deposits" placeholder="Deposits" min={0} /><ErrorText message={state.fieldErrors?.deposits} /></div>
       <div><Input type="number" name="fico" placeholder="FICO" min={300} max={850} /><ErrorText message={state.fieldErrors?.fico} /></div>
       <div><select name="follow_up_status" defaultValue="pending" className="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option></select></div>
-      <div><Input type="datetime-local" name="next_follow_up_date" /><ErrorText message={state.fieldErrors?.next_follow_up_date} /></div>
+      <div><Input type="datetime-local" aria-label="Follow-up date and time (Pacific)" name="next_follow_up_date" /><ErrorText message={state.fieldErrors?.next_follow_up_date} /></div>
       <Input name="outcome_tag" placeholder="Outcome tag" />
       <textarea name="notes" placeholder="Initial contact context / notes" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
       <SubmitButton />

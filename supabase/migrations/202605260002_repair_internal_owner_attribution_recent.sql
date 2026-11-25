@@ -11,12 +11,12 @@ update public.hot_leads hl
 set assigned_rep_id = a.actor_id,
     owner_profile_id = a.actor_id
 from (
-  select hot_lead_id, max(actor_id) as actor_id
+  select distinct on (hot_lead_id) hot_lead_id, actor_id
   from public.activities
   where hot_lead_id is not null
     and actor_id is not null
     and created_at >= now() - interval '90 days'
-  group by hot_lead_id
+  order by hot_lead_id, created_at desc, id desc
 ) a
 where hl.id = a.hot_lead_id
   and hl.owner_profile_id is null
@@ -40,13 +40,13 @@ update public.deals d
 set assigned_rep_id = a.actor_id,
     owner_profile_id = a.actor_id
 from (
-  select deal_id, max(actor_id) as actor_id
+  select distinct on (deal_id) deal_id, actor_id
   from public.activities
   where deal_id is not null
     and activity_type = 'hot_lead_converted'
     and actor_id is not null
     and created_at >= now() - interval '90 days'
-  group by deal_id
+  order by deal_id, created_at desc, id desc
 ) a
 where d.id = a.deal_id
   and d.owner_profile_id is null

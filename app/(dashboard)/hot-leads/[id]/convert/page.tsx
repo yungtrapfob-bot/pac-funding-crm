@@ -4,11 +4,12 @@ import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { ConvertHotLeadForm } from '@/components/hot-leads/convert-hot-lead-form';
 
-export default async function ConvertHotLeadPage({ params }: { params: { id: string } }) {
+export default async function ConvertHotLeadPage({ params: pendingParams }: { params: Promise<{ id: string }> }) {
+  const params = await pendingParams;
   const { profile } = await requireUser();
   const supabase = await createClient();
 
-  let leadQuery = supabase.from('hot_leads').select('*').eq('id', params.id);
+  let leadQuery = supabase.from('hot_leads').select('*').eq('id', params.id).is('archived_at', null);
   if (profile.role === 'rep') leadQuery = leadQuery.eq('assigned_rep_id', profile.id);
 
   const { data: lead } = await leadQuery.maybeSingle();

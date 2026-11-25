@@ -4,7 +4,6 @@ import { createClient } from '@/lib/supabase/server';
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get('code');
-  const next = searchParams.get('next') ?? '/dashboard';
 
   if (!code) {
     const error = searchParams.get('error_description') ?? 'Missing OAuth code.';
@@ -18,5 +17,5 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(error.message)}`);
   }
 
-  return NextResponse.redirect(`${origin}${next}`);
+  return NextResponse.redirect(`${origin}/dashboard`);
 }

@@ -8,16 +8,16 @@ alter type public.pipeline_stage add value if not exists 'KIF';
 
 update public.deals
 set current_stage = 'In Underwriting'
-where current_stage = 'Application Submitted';
+where current_stage::text = 'Application Submitted';
 
 update public.deals
 set current_stage = 'Offers'
-where current_stage = 'Offers / Declines Received';
+where current_stage::text = 'Offers / Declines Received';
 
 update public.deals
 set current_stage = 'Contracts Out'
-where current_stage = 'Contracts Signed';
+where current_stage::text = 'Contracts Signed';
 
 update public.deals
 set current_stage = 'KIF'
-where current_stage = 'Killed';
+where current_stage::text = 'Killed';

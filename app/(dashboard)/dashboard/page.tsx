@@ -1,3 +1,4 @@
+import { formatPacificDateTime } from '@/lib/pacific-time';
 import Link from 'next/link';
 import { DealsTable } from '@/components/tables/deals-table';
 import { MetricCard } from '@/components/dashboard/metric-card';
@@ -14,6 +15,7 @@ export default async function RepDashboardPage() {
   let leadsQuery = supabase
     .from('hot_leads')
     .select('id,business_name,owner_name,phone,email,follow_up_status,next_follow_up_date')
+    .is('archived_at', null)
     .order('next_follow_up_date', { ascending: true, nullsFirst: false })
     .limit(10);
   if (profile.role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', profile.id);
@@ -27,11 +29,11 @@ export default async function RepDashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <MetricCard label="Total Hot Leads" value={metrics.totalHotLeads} />
-        <MetricCard label="Due Today" value={metrics.dueToday} />
-        <MetricCard label="Overdue Follow-ups" value={metrics.overdueFollowups} />
-        <MetricCard label="Ready for Underwriting" value={metrics.readyForUnderwriting} />
-        <MetricCard label="In Underwriting" value={metrics.underwriting} />
+        <MetricCard label="Total Hot Leads" value={metrics.totalHotLeads} href="/hot-leads" />
+        <MetricCard label="Due Today" value={metrics.dueToday} href="/hot-leads?due=today" />
+        <MetricCard label="Overdue Follow-ups" value={metrics.overdueFollowups} href="/hot-leads?due=overdue" />
+        <MetricCard label="Ready for Underwriting" value={metrics.readyForUnderwriting} href="/hot-leads?due=underwriting" />
+        <MetricCard label="In Underwriting" value={metrics.underwriting} href="/deals?stage=underwriting" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -40,7 +42,7 @@ export default async function RepDashboardPage() {
             <h2 className="text-lg font-medium">Follow-up Tasks</h2>
             <Link href="/hot-leads" className="text-sm text-primary hover:underline">Open full queue</Link>
           </div>
-          {!leads?.length ? <p className="text-sm text-muted-foreground">No upcoming follow-up tasks.</p> : <div className="space-y-2">{leads.map((lead) => <Link key={lead.id} href={`/hot-leads/${lead.id}`} className="block rounded-md border border-border p-2 text-sm hover:bg-muted/40"><p className="font-medium text-primary">{lead.business_name}</p><p className="text-muted-foreground">{lead.owner_name} · {lead.phone || lead.email || 'No contact info'}</p><p>{lead.follow_up_status} · {lead.next_follow_up_date ? new Date(lead.next_follow_up_date).toLocaleString() : 'No due date'}</p></Link>)}</div>}
+          {!leads?.length ? <p className="text-sm text-muted-foreground">No upcoming follow-up tasks.</p> : <div className="space-y-2">{leads.map((lead) => <Link key={lead.id} href={`/hot-leads/${lead.id}`} className="block rounded-md border border-border p-2 text-sm hover:bg-muted/40"><p className="font-medium text-primary">{lead.business_name}</p><p className="text-muted-foreground">{lead.owner_name} · {lead.phone || lead.email || 'No contact info'}</p><p>{lead.follow_up_status} · {lead.next_follow_up_date ? formatPacificDateTime(lead.next_follow_up_date) : 'No due date'}</p></Link>)}</div>}
         </Card>
 
         <section className="space-y-2">

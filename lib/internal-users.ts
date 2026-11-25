@@ -1,4 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/admin';
+import { createClient } from '@/lib/supabase/server';
 import { requireRole } from '@/lib/auth';
 
 export type InternalUserProfile = {
@@ -7,16 +7,17 @@ export type InternalUserProfile = {
   email: string | null;
   role: string | null;
   created_at: string;
+  is_active: boolean;
 };
 
 const INTERNAL_ROLES = new Set(['admin', 'rep']);
 
 export async function getInternalUserProfiles(): Promise<InternalUserProfile[]> {
   await requireRole(['admin']);
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient
+  const supabase = await createClient();
+  const { data, error } = await supabase
     .from('profiles')
-    .select('id,full_name,email,role,created_at')
+    .select('id,full_name,email,role,created_at,is_active')
     .order('created_at', { ascending: false });
 
   if (error) {

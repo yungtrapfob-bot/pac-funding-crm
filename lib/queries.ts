@@ -1,3 +1,5 @@
+import { pacificDate } from '@/lib/pacific-time';
+import { readPages } from '@/lib/supabase/read-pages';
 import { createClient } from '@/lib/supabase/server';
 import { requireRole } from '@/lib/auth';
 import type { UserRole } from '@/types/db';
@@ -55,8 +57,16 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
     .from('deals')
     .select('id,current_stage,funded_amount,assigned_rep_id');
   if (role === 'rep') dealsQuery = dealsQuery.eq('assigned_rep_id', userId);
-  const { data: dealsData } = await dealsQuery;
-  const deals = dealsData ?? [];
+
+
+  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,follow_up_status,outcome_tag').is('archived_at', null);
+  if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
+
+
+  const [deals, hotLeads] = await Promise.all([
+    readPages((from, to) => dealsQuery.order('id').range(from, to)),
+    readPages((from, to) => leadsQuery.order('id').range(from, to)),
+  ]);
 
   const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
     if (!dealStage) return false;
@@ -67,23 +77,9 @@ export async function getDashboardMetrics(role: UserRole, userId: string) {
   const funded = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded');
   const kif = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF');
 
-  let leadsQuery = supabase.from('hot_leads').select('id,next_follow_up_date,follow_up_status,outcome_tag');
-  if (role === 'rep') leadsQuery = leadsQuery.eq('assigned_rep_id', userId);
-  const { data: leads } = await leadsQuery;
-
-  const today = new Date();
-  const start = new Date(today);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(today);
-  end.setHours(23, 59, 59, 999);
-
-  const hotLeads = leads ?? [];
-  const dueToday = hotLeads.filter((l) => {
-    if (!l.next_follow_up_date) return false;
-    const date = new Date(l.next_follow_up_date);
-    return date >= start && date <= end;
-  }).length;
-  const overdueFollowups = hotLeads.filter((l) => l.next_follow_up_date && new Date(l.next_follow_up_date) < start).length;
+  const today = pacificDate(new Date());
+  const dueToday = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) === today).length;
+  const overdueFollowups = hotLeads.filter((lead) => lead.next_follow_up_date && pacificDate(lead.next_follow_up_date) < today).length;
 
   return {
     totalDeals: deals.length,

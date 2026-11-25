@@ -1,11 +1,12 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { requireRole, requireUser } from "@/lib/auth";
+import { pacificDate, pacificInputValue, parsePacificInput } from "@/lib/pacific-time";
 import { PIPELINE_STAGES, toDbPipelineStage } from "@/lib/utils";
 
 const followUpStatusSchema = z.enum([
@@ -32,7 +33,7 @@ const hotLeadSchema = z.object({
   positions: z.coerce.number().nonnegative().optional().default(0),
   nsf_count: z.coerce.number().nonnegative().optional().default(0),
   deposits: z.coerce.number().nonnegative().optional().default(0),
-  fico: z.coerce.number().min(300).max(850).optional().default(300),
+  fico: z.preprocess((value) => value === "" ? undefined : value, z.coerce.number().min(300).max(850).default(300)),
   notes: z.string().optional(),
   next_follow_up_date: z.string().optional(),
   follow_up_status: followUpStatusSchema.default("pending"),
@@ -79,17 +80,6 @@ function assertCanAccessAssignedRecord(
   }
 }
 
-function parseLocalDateTime(value?: string | null) {
-  if (!value) return null;
-  const [datePart, timePart] = value.split("T");
-  if (!datePart || !timePart) return null;
-  const [year, month, day] = datePart.split("-").map(Number);
-  const [hour, minute] = timePart.split(":").map(Number);
-  if ([year, month, day, hour, minute].some((v) => Number.isNaN(v)))
-    return null;
-  return new Date(year, month - 1, day, hour, minute).toISOString();
-}
-
 export async function createHotLead(
   _: HotLeadFormState,
   formData: FormData,
@@ -101,11 +91,14 @@ export async function createHotLead(
     return {
       status: "error",
       message: "Please fix the highlighted fields.",
-      fieldErrors: parsed.error.flatten().fieldErrors,
+      fieldErrors: z.flattenError(parsed.error).fieldErrors,
     };
 
   const { next_follow_up_date, notes, ...rest } = parsed.data;
-  const followUpAt = parseLocalDateTime(next_follow_up_date);
+  const followUpAt = next_follow_up_date ? parsePacificInput(next_follow_up_date) : null;
+  if (next_follow_up_date && !followUpAt) {
+    return { status: "error", message: "Choose a valid Pacific follow-up date and time.", fieldErrors: { next_follow_up_date: ["This time does not exist in Pacific time."] } };
+  }
   const nowIso = new Date().toISOString();
 
   const { data: lead, error } = await supabase
@@ -115,7 +108,7 @@ export async function createHotLead(
       notes: notes ?? null,
       next_follow_up_date: followUpAt,
       assigned_rep_id: assignedRepId,
-      last_contact_date: nowIso.slice(0, 10),
+      last_contact_date: pacificDate(nowIso),
     })
     .select("id")
     .single();
@@ -127,7 +120,7 @@ export async function createHotLead(
     };
 
   const noteText = (notes ?? "").trim();
-  await supabase.from("activities").insert({
+  const { error: timelineError } = await supabase.from("activities").insert({
     hot_lead_id: lead.id,
     actor_id: assignedRepId,
     activity_type: "hot_lead_activity",
@@ -142,7 +135,7 @@ export async function createHotLead(
 
   revalidatePath("/dashboard");
   revalidatePath("/hot-leads");
-  redirect(`/hot-leads/${lead.id}?created=1`);
+  redirect(`/hot-leads/${lead.id}?created=${timelineError ? "timeline_warning" : "1"}`);
 }
 
 export async function updateHotLead(formData: FormData) {
@@ -151,13 +144,13 @@ export async function updateHotLead(formData: FormData) {
   const actorId = profile.id;
   const p = Object.fromEntries(formData);
   const leadId = String(p.id ?? "");
-  const followUpAt = parseLocalDateTime(String(p.next_follow_up_date ?? ""));
+  const followUpInput = String(p.next_follow_up_date ?? "");
   const noteText = String(p.activity_note ?? "").trim();
 
   const { data: existingLead, error: existingLeadError } = await supabase
     .from("hot_leads")
-    .select("id,assigned_rep_id")
-    .eq("id", leadId)
+    .select("id,assigned_rep_id,next_follow_up_date")
+    .eq("id", leadId).is("archived_at", null)
     .maybeSingle();
   if (existingLeadError) throw new Error(existingLeadError.message);
   if (!existingLead) throw new Error("Hot lead not found or access denied.");
@@ -168,7 +161,11 @@ export async function updateHotLead(formData: FormData) {
     "Hot lead",
   );
 
-  const ownerId = resolveHotLeadAssignedRepId(existingLead) ?? actorId;
+  const existingFollowUp = existingLead.next_follow_up_date;
+  const followUpAt = existingFollowUp && pacificInputValue(existingFollowUp) === followUpInput
+    ? existingFollowUp
+    : followUpInput ? parsePacificInput(followUpInput) : null;
+  if (followUpInput && !followUpAt) redirect(`/hot-leads/${leadId}?saved=invalid_time`);
 
   const { error } = await supabase
     .from("hot_leads")
@@ -180,14 +177,13 @@ export async function updateHotLead(formData: FormData) {
       follow_up_status: followUpStatusSchema.parse(p.follow_up_status),
       next_follow_up_date: followUpAt,
       outcome_tag: p.outcome_tag,
-      last_contact_date: new Date().toISOString().slice(0, 10),
-      assigned_rep_id: ownerId,
+      last_contact_date: pacificDate(new Date()),
     })
     .eq("id", leadId);
 
   if (error) throw new Error(error.message);
 
-  if (noteText || followUpAt) {
+  if (noteText || followUpAt !== existingFollowUp) {
     const details = {
       category: "follow_up_update",
       note: noteText || "Follow-up updated.",
@@ -201,7 +197,11 @@ export async function updateHotLead(formData: FormData) {
       activity_type: "hot_lead_activity",
       details,
     });
-    if (activityError) throw new Error(activityError.message);
+    if (activityError) {
+      revalidatePath("/dashboard");
+      revalidatePath("/hot-leads");
+      redirect(`/hot-leads/${leadId}?saved=timeline_warning`);
+    }
   }
 
   revalidatePath("/hot-leads");
@@ -246,9 +246,9 @@ async function uploadDealFiles(
   dealId: string,
   files: Array<{ file: File; type: string }>,
 ) {
-  for (const [index, entry] of files.entries()) {
+  for (const entry of files) {
     const safeName = entry.file.name.replace(/[^a-zA-Z0-9._-]+/g, "_");
-    const filePath = `${dealId}/${Date.now()}-${index}-${safeName}`;
+    const filePath = `${dealId}/${randomUUID()}-${safeName}`;
     const { error: uploadError } = await supabase.storage
       .from("deal-files")
       .upload(filePath, entry.file, { upsert: false });
@@ -264,80 +264,14 @@ async function uploadDealFiles(
   return null;
 }
 
-export async function convertHotLeadToDeal(formData: FormData) {
-  const { user, profile } = await requireUser();
-  const supabase = await createClient();
-  const leadId = String(formData.get("hot_lead_id"));
-  const { data: lead, error } = await supabase
-    .from("hot_leads")
-    .select("*")
-    .eq("id", leadId)
-    .single();
-  if (error || !lead) throw new Error("Lead not found or access denied.");
-  assertCanAccessAssignedRecord(profile.role, profile.id, lead, "Hot lead");
-
-  const { data: existingDeal } = await supabase
-    .from("activities")
-    .select("deal_id")
-    .eq("hot_lead_id", lead.id)
-    .eq("activity_type", "hot_lead_converted")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`);
-
-  const ownerId = resolveHotLeadAssignedRepId(lead) ?? profile.id;
-  const requestedAmountNote = formatRequestedAmountForNotes(
-    lead.requested_amount,
-  );
-  const { data: deal, error: dealErr } = await supabase
-    .from("deals")
-    .insert({
-      business_name: lead.business_name,
-      owner_name: lead.owner_name,
-      phone: lead.phone,
-      email: lead.email,
-      industry: lead.industry,
-      monthly_revenue: lead.monthly_revenue,
-      time_in_business_months: lead.time_in_business_months,
-      state: lead.state,
-      positions: lead.positions,
-      nsf_count: lead.nsf_count,
-      deposits: lead.deposits,
-      fico: lead.fico,
-      notes: lead.notes,
-      internal_notes: requestedAmountNote,
-      assigned_rep_id: ownerId,
-    })
-    .select("id")
-    .single();
-  if (dealErr || !deal)
-    throw new Error(dealErr?.message ?? "Failed to convert lead");
-
-  await supabase.from("activities").insert({
-    hot_lead_id: lead.id,
-    deal_id: deal.id,
-    actor_id: user.id,
-    activity_type: "hot_lead_converted",
-    details: {
-      source: "quick_convert",
-      requested_amount: lead.requested_amount ?? null,
-    },
-  });
-
-  revalidatePath("/dashboard");
-  revalidatePath("/hot-leads");
-  revalidatePath("/deals");
-  redirect(`/deals/${deal.id}`);
-}
-
 export type ConvertLeadFormState = {
   status: "idle" | "error";
   message?: string;
 };
 
 export async function startHotLeadConversion(formData: FormData) {
-  const leadId = String(formData.get("hot_lead_id") ?? "");
+  await requireUser();
+  const leadId = z.string().uuid().parse(formData.get("hot_lead_id"));
   redirect(`/hot-leads/${leadId}/convert`);
 }
 
@@ -353,6 +287,7 @@ export async function submitHotLeadConversion(
     .from("hot_leads")
     .select("id,assigned_rep_id")
     .eq("id", leadId)
+    .is("archived_at", null)
     .maybeSingle();
   if (leadError || !lead)
     return { status: "error", message: "Hot lead not found or inaccessible." };
@@ -362,19 +297,23 @@ export async function submitHotLeadConversion(
     return { status: "error", message: "Hot lead not found or inaccessible." };
   }
 
-  const { data: existingDeal } = await supabase
-    .from("activities")
-    .select("deal_id")
-    .eq("hot_lead_id", lead.id)
-    .eq("activity_type", "hot_lead_converted")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (existingDeal?.deal_id) redirect(`/deals/${existingDeal.deal_id}`);
+  const { data: existingDeal, error: existingDealError } = await supabase
+    .from("deals").select("id").eq("converted_from_hot_lead_id", lead.id).limit(1).maybeSingle();
+  if (existingDealError) return { status: "error", message: "Could not verify whether this lead already has a deal." };
+  if (existingDeal) redirect(`/deals/${existingDeal.id}`);
+
+  const { data: legacyConversion, error: legacyError } = await supabase
+    .from("activities").select("deal_id").eq("hot_lead_id", lead.id)
+    .eq("activity_type", "hot_lead_converted").not("deal_id", "is", null)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (legacyError) return { status: "error", message: "Could not check conversion history." };
+  if (legacyConversion?.deal_id) redirect(`/deals/${legacyConversion.deal_id}`);
 
   const assignedRepId = resolveHotLeadAssignedRepId(lead) ?? profile.id;
   const requestedAmount = Number(formData.get("requested_amount") ?? 0);
   const requestedAmountNote = formatRequestedAmountForNotes(requestedAmount);
+  const files = getFileEntries(formData);
+  if (!hasRequiredDealFiles(files)) return { status: "error", message: "Attach a signed application and at least one bank statement." };
   const payload = {
     business_name: String(formData.get("business_name") ?? ""),
     owner_name: String(formData.get("owner_name") ?? ""),
@@ -396,6 +335,7 @@ export async function submitHotLeadConversion(
       requestedAmountNote,
     ),
     assigned_rep_id: assignedRepId,
+    converted_from_hot_lead_id: lead.id,
   };
 
   const { data: deal, error: dealError } = await supabase
@@ -421,30 +361,40 @@ export async function submitHotLeadConversion(
         : null,
     },
   });
-  if (activityError)
-    return {
-      status: "error",
-      message: `Deal created, but conversion link could not be recorded: ${activityError.message}`,
-    };
-
-  const uploadError = await uploadDealFiles(
-    supabase,
-    deal.id,
-    getFileEntries(formData),
-  );
-  if (uploadError)
-    return { status: "error", message: `Deal created, but ${uploadError}` };
+  const uploadError = await uploadDealFiles(supabase, deal.id, files);
+  if (activityError) console.error("[conversion] Could not add timeline entry", { code: activityError.code });
 
   revalidatePath("/dashboard");
+  revalidatePath("/admin/processing");
   revalidatePath("/hot-leads");
   revalidatePath("/deals");
   revalidatePath(`/deals/${deal.id}`);
-  redirect(`/deals/${deal.id}?converted=1`);
+  redirect(`/deals/${deal.id}?${uploadError ? "upload=incomplete" : "converted=1"}`);
+}
+
+function hasRequiredDealFiles(files: ReturnType<typeof getFileEntries>) {
+  return files.some((entry) => entry.type === "application") && files.some((entry) => entry.type === "statement");
+}
+
+export async function addDealDocuments(formData: FormData) {
+  const { profile } = await requireUser();
+  const dealId = z.string().uuid().parse(formData.get("deal_id"));
+  const supabase = await createClient();
+  const { data: deal } = await supabase.from("deals").select("id,assigned_rep_id").eq("id", dealId).maybeSingle();
+  if (!deal || (profile.role !== "admin" && deal.assigned_rep_id !== profile.id)) redirect("/deals");
+  const files = getFileEntries(formData);
+  if (!files.length) redirect(`/deals/${dealId}?upload=missing`);
+  const error = await uploadDealFiles(supabase, dealId, files);
+  revalidatePath("/admin/processing");
+  revalidatePath(`/deals/${dealId}`);
+  redirect(`/deals/${dealId}?upload=${error ? "incomplete" : "complete"}`);
 }
 
 export async function createDeal(formData: FormData) {
   const supabase = await createClient();
   const assignedRepId = await resolveProfileIdForUser();
+  const files = getFileEntries(formData);
+  if (!hasRequiredDealFiles(files)) redirect("/deals/new?upload=missing");
   const payload = Object.fromEntries(formData);
   const requestedAmountNote = formatRequestedAmountForNotes(
     payload.requested_amount,
@@ -476,62 +426,45 @@ export async function createDeal(formData: FormData) {
   if (error || !deal)
     throw new Error(error?.message ?? "Failed to create deal");
 
-  const uploadError = await uploadDealFiles(
-    supabase,
-    deal.id,
-    getFileEntries(formData),
-  );
-  if (uploadError) throw new Error(`Deal created, but ${uploadError}`);
+  const uploadError = await uploadDealFiles(supabase, deal.id, files);
 
+  revalidatePath("/admin/processing");
+  revalidatePath("/dashboard");
   revalidatePath("/deals");
   revalidatePath(`/deals/${deal.id}`);
-  redirect(`/deals/${deal.id}`);
+  redirect(`/deals/${deal.id}${uploadError ? "?upload=incomplete" : ""}`);
 }
 
-export async function deleteHotLead(formData: FormData) {
+export type ManageLeadsState = { status: "idle" | "success" | "error"; message?: string };
+
+export async function manageHotLeads(
+  _: ManageLeadsState,
+  formData: FormData,
+): Promise<ManageLeadsState> {
   await requireRole(["admin"]);
+  const result = z.array(z.string().uuid()).min(1).max(100).safeParse(formData.getAll("lead_ids"));
+  const operation = formData.get("operation");
+  if (!result.success || (operation !== "archive" && operation !== "delete")) {
+    return { status: "error", message: "Select between 1 and 100 leads and confirm an action." };
+  }
+
   const supabase = await createClient();
-  const leadId = String(formData.get("hot_lead_id") ?? "");
-  if (!leadId) redirect("/hot-leads?delete=missing");
-
-  const { data: lead, error: leadError } = await supabase
-    .from("hot_leads")
-    .select("id")
-    .eq("id", leadId)
-    .maybeSingle();
-  if (leadError) throw new Error(leadError.message);
-  if (!lead) redirect("/hot-leads?delete=missing");
-
-  const { data: conversionActivity, error: conversionError } = await supabase
-    .from("activities")
-    .select("deal_id")
-    .eq("hot_lead_id", leadId)
-    .eq("activity_type", "hot_lead_converted")
-    .not("deal_id", "is", null)
-    .limit(1)
-    .maybeSingle();
-  if (conversionError) throw new Error(conversionError.message);
-
-  if (conversionActivity?.deal_id)
-    redirect(`/hot-leads/${leadId}?delete=converted`);
-
-  const { error: activityDeleteError } = await supabase
-    .from("activities")
-    .delete()
-    .eq("hot_lead_id", leadId);
-  if (activityDeleteError) throw new Error(activityDeleteError.message);
-
-  const { data: deletedRows, error } = await supabase
-    .from("hot_leads")
-    .delete()
-    .eq("id", leadId)
-    .select("id");
-  if (error) throw new Error(error.message);
-  if (!deletedRows?.length) throw new Error("Hot lead delete did not remove a row.");
+  const { data: count, error } = await supabase.rpc("crm_manage_hot_leads", {
+    lead_ids: [...new Set(result.data)],
+    archive_converted: operation === "archive",
+  });
+  if (error) {
+    console.error("[hot-leads] lifecycle operation failed", { code: error.code, message: error.message });
+    const message = error.code === "P0001" ? error.message
+      : error.code === "23503" ? "One or more leads have linked records. No leads were deleted."
+      : "Could not complete the action. Refresh the list and try again.";
+    return { status: "error", message };
+  }
 
   revalidatePath("/hot-leads");
   revalidatePath("/dashboard");
-  redirect("/hot-leads?deleted=1");
+  revalidatePath("/admin");
+  return { status: "success", message: `${count} ${count === 1 ? "lead" : "leads"} ${operation === "archive" ? "archived" : "deleted"}.` };
 }
 
 export async function updateDealDetails(formData: FormData) {
@@ -604,50 +537,15 @@ export async function addOffer(formData: FormData) {
 }
 
 export async function selectOffer(formData: FormData) {
-  await requireRole(["admin"]);
+  await requireUser();
   const supabase = await createClient();
-  const adminSupabase = createAdminClient();
-  const p = Object.fromEntries(formData);
-  const offerId = String(p.offer_id);
-  const dealId = String(p.deal_id);
-  const { data: offer, error: offerError } = await supabase
-    .from("offers")
-    .select("id,deal_id,status")
-    .eq("id", offerId)
-    .eq("deal_id", dealId)
-    .maybeSingle();
-  if (offerError) throw new Error(offerError.message);
-  if (!offer) throw new Error("Offer not found for this deal");
-  if (offer.status === "declined")
-    throw new Error("Declined offers cannot be selected");
-  const { error: resetError } = await adminSupabase
-    .from("offers")
-    .update({ status: "open" })
-    .eq("deal_id", dealId)
-    .eq("status", "accepted")
-    .neq("id", offerId);
-  if (resetError) throw new Error(resetError.message);
-  const { data: updatedOfferRows, error: offerUpdateError } =
-    await adminSupabase
-      .from("offers")
-      .update({ status: "accepted" })
-      .eq("id", offerId)
-      .eq("deal_id", dealId)
-      .neq("status", "declined")
-      .select("id,status");
-  if (offerUpdateError) throw new Error(offerUpdateError.message);
-  if (!updatedOfferRows || updatedOfferRows.length !== 1) {
-    throw new Error("Selected offer update did not persist (no rows updated)");
-  }
-  const persistedOffer = updatedOfferRows[0];
-  if (String(persistedOffer.status ?? "").toLowerCase() !== "accepted") {
-    throw new Error("Selected offer status did not persist as accepted");
-  }
-  const { error: dealError } = await supabase
-    .from("deals")
-    .update({ current_stage: toDbPipelineStage("Contracts Out") })
-    .eq("id", dealId);
-  if (dealError) throw new Error(dealError.message);
+  const dealId = z.string().uuid().parse(formData.get("deal_id"));
+  const offerId = z.string().uuid().parse(formData.get("offer_id"));
+  const { error } = await supabase.rpc("crm_select_offer", {
+    target_deal: dealId,
+    target_offer: offerId,
+  });
+  if (error) redirect(`/deals/${dealId}?offer_error=1`);
   revalidatePath(`/deals/${dealId}`);
   revalidatePath("/admin/pipeline");
   revalidatePath("/deals");
