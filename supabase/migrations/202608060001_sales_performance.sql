@@ -224,7 +224,7 @@ begin
       end if;
     end if;
   else
-    select * into d from public.deals where id = new.deal_id for update;
+    select * into d from public.deals where id = new.deal_id for no key update;
     if not found then return new; end if;
     if tg_table_name = 'deal_files' and exists (
       select 1 from public.deal_files where deal_id = d.id and file_type = 'application'
@@ -259,6 +259,25 @@ begin
 end;
 $$;
 revoke all on function public.crm_sales_deal_evidence() from public, anon, authenticated;
+-- File metadata alone cannot create a false completed-application milestone.
+-- Existing uploads use Storage first, then save the database reference.
+create function public.crm_sales_validate_document_object()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  if auth.uid() is not null and new.file_type in ('application','statement')
+    and not exists (
+      select 1 from storage.objects o where o.bucket_id='deal-files' and o.name=new.path
+    ) then
+    raise exception 'Upload the document to private Storage before recording it.';
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.crm_sales_validate_document_object() from public, anon, authenticated;
+create trigger crm_sales_validate_document_object before insert on public.deal_files
+for each row execute function public.crm_sales_validate_document_object();
+
 create trigger crm_sales_document_evidence after insert on public.deal_files
 for each row execute function public.crm_sales_deal_evidence();
 create trigger crm_sales_offer_evidence after insert or update of status,decision,approval_amount,factor_rate,payment_amount,payment_frequency,term,term_payments,decline_reason,stipulations on public.offers
@@ -498,7 +517,6 @@ begin
       when operation='delete' and not l.sales_test then 'Only explicitly marked test leads can be deleted.'
       when operation='archive' and l.archived_at is not null then 'Lead is already archived.'
       when operation='restore' and l.archived_at is null then 'Lead is not archived.'
-      when operation='restore' and l.sales_lost then 'Reopen the lost opportunity separately.'
       when operation='reassign' and (l.archived_at is not null or l.sales_lost) then 'Only active leads can be reassigned.'
       else null
     end

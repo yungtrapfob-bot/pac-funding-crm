@@ -214,6 +214,28 @@ try {
   await other.getByText('Merchant ghosted',{exact:false}).first().waitFor();
   await action(other,'reopened');
   await other.getByText('Reopened',{exact:true}).waitFor();
+  const restoreFixture = must(await service.from('hot_leads').insert({
+    business_name:`Follow-up QA ${nonce}`,owner_name:'Synthetic',email:'qa@example.test',
+    phone:'5550100199',assigned_rep_id:third.id,owner_profile_id:third.id,
+    archived_at:new Date().toISOString(),next_follow_up_date:new Date(Date.now() + 86400000).toISOString(),
+  }).select('id,business_name').single());
+  const bulk = async (page, operation, name, target) => {
+    await page.getByRole('checkbox',{name:'Select '+name,exact:true}).check();
+    await page.getByLabel('Lead actions').selectOption(operation);
+    await page.getByRole('button',{name:'Review selection'}).click();
+    if (target) await page.getByLabel('Assign to').selectOption(target);
+    await page.getByRole('button',{name:'Confirm action',exact:true}).click();
+  };
+  await admin.goto(base+'/hot-leads?view=archived&q='+nonce);
+  await bulk(admin,'restore',restoreFixture.business_name);
+  await admin.getByText('1 lead restored.',{exact:true}).waitFor();
+  await admin.goto(base+'/hot-leads?q='+nonce);
+  await bulk(admin,'reassign',restoreFixture.business_name,opener.id);
+  await admin.getByText('1 lead reassigned.',{exact:true}).waitFor();
+  const assignments = must(await service.from('hot_leads').select('owner_profile_id,assigned_rep_id').eq('id',restoreFixture.id).single());
+  assert.equal(assignments.owner_profile_id,third.id);
+  assert.equal(assignments.assigned_rep_id,opener.id);
+  console.log('PASS browser restore and reassignment with original owner unchanged.');
   await admin.setViewportSize({width:1440,height:1050});
   await admin.goto(base+'/admin');
   await admin.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','crm-sales-performance.png'),fullPage:true});
@@ -225,6 +247,11 @@ try {
     business_name:`Direct incomplete QA ${nonce}`,owner_name:'Synthetic',email:'qa@example.test',
     phone:'5550100199',assigned_rep_id:third.id
   }).select('id').single());
+  const ownerSession = await session(third.email);
+  const unuploaded = await ownerSession.client.from('deal_files').insert({
+    deal_id:direct.id, file_type:'application',path:direct.id+'/synthetic-absent.pdf',
+  });
+  assert.match(unuploaded.error?.message ?? '', /Upload the document/);
   const directQueue = must(await service.from('crm_sales_deal_queue').select('queue_stage').eq('id',direct.id).single());
   assert.equal(directQueue.queue_stage,'missing_documents');
   assert.equal(must(await service.from('crm_sales_events').select('id').eq('deal_id',direct.id).eq('kind','application_completed')).length,0);

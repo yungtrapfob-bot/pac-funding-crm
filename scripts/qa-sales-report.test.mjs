@@ -59,3 +59,13 @@ test('conflicting conversion links are surfaced rather than attributed by mercha
   assert.ok(rows.every(row => row.issue));
   assert.ok(rows.every(row => !row.lead || !row.deal));
 });
+
+
+test('does not turn out-of-order historical milestones into successful conversions', () => {
+  const rows = buildOpportunities([], [{id:'historic'}], [
+    mkEvent('approval',{deal_id:'historic'},'approved',date(3)),
+    mkEvent('submission',{deal_id:'historic'},'submitted',date(5)),
+  ], []);
+  assert.deepEqual(milestonePair(rows,'submitted','approved',dates),{sample:1,converted:0,rate:0});
+  assert.deepEqual(milestoneMedian(rows,'submitted','approved',dates),{sample:0,days:null});
+});

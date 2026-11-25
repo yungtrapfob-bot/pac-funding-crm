@@ -63,7 +63,7 @@ export async function SalesPerformance({ filters, admin = false }: { filters: Fi
   const activityKeys = funnelStages.map(stage => add('activity-' + stage, eventLabels[stage], activity(scoped,stage)));
   activityKeys.push(add('volume','Funded volume',recordedFunded,recordedFunded.length ? money.format(recordedFunded.reduce((sum,r) => sum+Number(r.deal?.funded_amount ?? 0),0)) : 'N/A'));
   activityKeys.push(add('loss','Confirmed losses',loss));
-  activityKeys.push(add('ghosted','Ghosted leads',loss.filter(row => row.lead && lastLoss(row,dates)?.reason === 'ghosted')));
+  activityKeys.push(add('ghosted','Ghosted leads',loss.filter(row => { const event = lastLoss(row,dates); return event?.lead_id && event.reason === 'ghosted'; })));
   const ledgerIds = new Set(visibleLedger.map(row => row.deal_id));
   activityKeys.push(add('earned',isAdmin ? 'Rep commission ledger' : 'Earned commission',population.filter(row => row.deal && ledgerIds.has(row.deal.id)),money.format(earned(visibleLedger))));
   if (isAdmin && !rep) {

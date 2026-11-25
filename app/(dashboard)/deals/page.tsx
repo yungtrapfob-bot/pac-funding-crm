@@ -30,12 +30,18 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
     ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
     : { data: [] };
   const queue = searchParams.queue ?? '';
-  const queueIds = queue && Object.hasOwn(dealStages, queue)
-    ? new Set((await readPages((from,to) => supabase.from('crm_sales_deal_queue').select('id')
-        .eq('queue_stage',queue).eq('sales_test',false).order('id').range(from,to))).map(row => row.id))
-    : null;
-  let deals = await getDeals(profile.role, profile.id, rep || undefined);
-  if (queueIds) deals = deals.filter(d => queueIds.has(d.id));
+  const filterQueue = Object.hasOwn(dealStages, queue);
+  const [initialDeals, queueRows] = await Promise.all([
+    getDeals(profile.role, profile.id, rep || undefined),
+    readPages((from,to) => {
+      const query = supabase.from('crm_sales_deal_queue').select('id,queue_stage').order('id');
+      if (filterQueue) query.eq('queue_stage',queue).eq('sales_test',false);
+      return query.range(from,to);
+    }),
+  ]);
+  const operationalStages = new Map(queueRows.map(row => [row.id, row.queue_stage]));
+  let deals = initialDeals.map(deal => ({...deal, operational_stage: operationalStages.get(deal.id)}));
+  if (filterQueue) deals = deals.filter(deal => operationalStages.has(deal.id));
   if (q) deals = deals.filter((d) => [d.business_name, d.owner_name, d.email].some((v) => String(v ?? '').toLowerCase().includes(q)));
   if (stage) {
     if (stage in STAGE_FILTERS && STAGE_FILTERS[stage].length) {
