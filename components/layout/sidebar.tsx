@@ -6,9 +6,9 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
 const sections = [
-  { label: 'OPERATIONS', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/hot-leads', label: 'Hot Leads / Tasks' }, { href: '/hot-leads/new', label: 'New Hot Lead' }] },
+  { label: 'OPERATIONS', links: [{ href: '/dashboard', label: 'Dashboard' }, { href: '/performance', label: 'My performance' }, { href: '/hot-leads', label: 'Hot Leads / Tasks' }, { href: '/hot-leads/new', label: 'New Hot Lead' }] },
   { label: 'PIPELINE', links: [{ href: '/deals', label: 'Deals Pipeline' }, { href: '/commissions', label: 'Commissions' }] },
-  { label: 'ADMIN', links: [{ href: '/admin', label: 'Admin Dashboard' }, { href: '/admin/pipeline', label: 'Admin Pipeline' }, { href: '/admin/processing', label: 'Processing Queue' }, { href: '/admin/funders', label: 'Funder Master' }, { href: '/admin/users', label: 'Users' }], adminOnly: true }
+  { label: 'ADMIN', links: [{ href: '/admin', label: 'Sales Performance Center' }, { href: '/admin/pipeline', label: 'Admin Pipeline' }, { href: '/admin/processing', label: 'Processing Queue' }, { href: '/admin/funders', label: 'Funder Master' }, { href: '/admin/users', label: 'Users' }], adminOnly: true }
 ];
 
 export function Sidebar({ isAdmin, userName, userEmail, userRole }: { isAdmin: boolean; userName: string; userEmail: string; userRole: string }) {

@@ -1,3 +1,8 @@
+import { SalesActions } from '@/components/sales/sales-actions';
+import { SalesTimeline } from '@/components/sales/timeline';
+import { FunderTracker } from '@/components/sales/funder-tracker';
+import { dealStages } from '@/lib/sales-labels';
+import { formatPacificDateTime } from '@/lib/pacific-time';
 import type { ReactNode } from "react";
 import {
   addOffer,
@@ -76,6 +81,11 @@ export default async function DealDetailPage({
   if (dealError) throw new Error(dealError.message);
   const deal = dealRows?.[0] ?? null;
   if (!deal) return <p>Deal not found.</p>;
+  const [{ data: queue }, { data: processors }] = await Promise.all([
+    supabase.from('crm_sales_deal_queue').select('queue_stage').eq('id',deal.id).maybeSingle(),
+    isAdmin ? supabase.from('profiles').select('id,full_name').eq('is_active',true).order('full_name') : {data:[]},
+  ]);
+  const queueStage = queue?.queue_stage ?? 'processing';
 
   const { data: offers } = await supabase
     .from("offers")
@@ -114,7 +124,7 @@ export default async function DealDetailPage({
     : [];
 
   const selected =
-    (offers ?? []).find(
+    (offers ?? []).find(offer => offer.id === deal.selected_offer_id) ?? (offers ?? []).find(
       (o) => String(o.status ?? "").toLowerCase() === "accepted",
     ) ?? null;
   const selectedSummary = selected
@@ -192,7 +202,7 @@ export default async function DealDetailPage({
       <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{deal.business_name}</h1>
-          <Badge>{deal.current_stage}</Badge>
+          <Badge>{dealStages[queueStage]}{deal.sales_test && ' · Test record'}</Badge>
         </div>
         <p className="mt-2 text-sm text-muted-foreground">
           Assigned Internal Rep:{" "}
@@ -254,7 +264,7 @@ export default async function DealDetailPage({
               defaultValue={toUiPipelineStage(deal.current_stage)}
               className="rounded-md border px-3 py-2 text-sm"
             >
-              {PIPELINE_STAGES.map((s) => (
+              {PIPELINE_STAGES.filter(stage => stage !== 'KIF').map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -376,6 +386,13 @@ export default async function DealDetailPage({
             className="grid grid-cols-1 gap-2 md:grid-cols-4"
           >
             <input type="hidden" name="deal_id" value={deal.id} />
+            <label className="grid gap-1 text-sm">Record response
+              <select name="revise_offer_id" className="rounded border border-border p-2">
+                <option value="">Add a new response</option>
+                {(offers ?? []).filter(o => ['open','declined'].includes(o.status)).map(o =>
+                  <option key={o.id} value={o.id}>Revise {o.funder} · {o.status}</option>)}
+              </select>
+            </label>
             <Input name="funder" placeholder="Funder name" required />
             <select
               name="decision"
@@ -492,9 +509,23 @@ export default async function DealDetailPage({
         </div>
       </Card>
 
+      <Card id="sales-actions">
+        <h2 className="mb-2 text-lg font-medium">Next action</h2>
+        {searchParams?.saved === 'stage_error' && <p role="alert" className="text-sm text-red-800">Could not change the pipeline stage. Use Mark lost or Reopen when applicable.</p>}
+        {deal.sales_follow_up_at && <p className="mb-2 text-sm">{deal.sales_next_action} · {formatPacificDateTime(deal.sales_follow_up_at)} (Pacific)</p>}
+        {deal.converted_from_hot_lead_id && <Link className="mb-2 block text-primary underline" href={`/hot-leads/${deal.converted_from_hot_lead_id}`}>Originating lead and activity</Link>}
+        <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={queueStage === 'funded'}
+          hasTask={Boolean(deal.sales_follow_up_at)} source={deal.sales_source ?? undefined} isTest={Boolean(deal.sales_test)}
+          processors={(processors ?? []).map(p => ({id:p.id,name:p.full_name ?? p.id}))} />
+      </Card>
+      <Card><h2 className="mb-2 text-lg font-medium">Funder response tracker</h2>
+        <FunderTracker id={deal.id} offers={offers ?? []} submissionLogs={submissionLogs ?? []} stage={dealStages[queueStage]} />
+      </Card>
+      <Card><h2 className="mb-2 text-lg font-medium">Sales history</h2><SalesTimeline entity="deal" id={deal.id} /></Card>
+
       <Card>
         <h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2>
-        {searchParams?.upload === 'incomplete' && <p role="alert" className="mb-2 text-sm text-red-800">Some documents could not be saved. Check the list and upload the missing files below.</p>}
+        {searchParams?.upload === 'incomplete' && <p role="alert" className="mb-2 text-sm text-red-800">The application is incomplete. Check the list and attach any missing documents below.</p>}
         {searchParams?.upload === 'missing' && <p role="alert" className="mb-2 text-sm text-red-800">Choose a document to upload.</p>}
         {searchParams?.upload === 'complete' && <p role="status" className="mb-2 text-sm text-emerald-800">Documents uploaded.</p>}
         <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">

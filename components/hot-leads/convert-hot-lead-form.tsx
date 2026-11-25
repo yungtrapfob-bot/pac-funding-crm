@@ -40,7 +40,7 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
         <h3 className="text-base font-semibold">Financial Snapshot</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <Field label="Monthly Revenue"><Input name="monthly_revenue" type="number" defaultValue={lead.monthly_revenue ?? 0} required /></Field>
-          <Field label="Funding Amount Requested"><Input name="requested_amount" type="number" defaultValue={lead.requested_amount ?? 0} /></Field>
+          <Field label="Funding Amount Requested"><Input name="requested_amount" type="number" min="0" max="9999999999.99" step="0.01" defaultValue={lead.requested_amount ?? ''} /></Field>
           <Field label="Positions"><Input name="positions" type="number" defaultValue={lead.positions ?? 0} required /></Field>
           <Field label="NSF Count"><Input name="nsf_count" type="number" defaultValue={lead.nsf_count ?? 0} required /></Field>
           <Field label="Deposits / Month"><Input name="deposits" type="number" defaultValue={lead.deposits ?? 0} required /></Field>
@@ -57,8 +57,8 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
       <section className="space-y-3">
         <h3 className="text-base font-semibold">File Uploads</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Application File (single)"><Input type="file" name="application_file" required /><span className="text-xs text-muted-foreground">Attach one signed application.</span></Field>
-          <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple required /><span className="text-xs text-muted-foreground">Select all statement months and supporting docs before submitting.</span></Field>
+          <Field label="Application File (single)"><Input type="file" name="application_file" /><span className="text-xs text-muted-foreground">Attach when available. Incomplete files stay in the document queue.</span></Field>
+          <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple /><span className="text-xs text-muted-foreground">Select all statement months and supporting docs before submitting.</span></Field>
         </div>
       </section>
 
