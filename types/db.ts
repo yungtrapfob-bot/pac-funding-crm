@@ -10,4 +10,5 @@ export interface Profile {
   email: string;
   role: UserRole;
   created_at: string;
+  is_active: boolean;
 }

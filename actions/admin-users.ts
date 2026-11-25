@@ -1,202 +1,112 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { requireRole } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import type { UserRole } from "@/types/db";
+import { createClient } from "@/lib/supabase/server";
 import type { CreateUserFormState } from "@/actions/admin-users-form-state";
 
-function isUserRole(value: string): value is UserRole {
-  return value === "admin" || value === "rep";
-}
-
-async function findAuthUserByEmail(
-  adminClient: ReturnType<typeof createAdminClient>,
-  email: string,
-) {
-  let page = 1;
-
-  while (true) {
-    const { data: usersPage, error: listError } =
-      await adminClient.auth.admin.listUsers({
-        page,
-        perPage: 200,
-      });
-
-    if (listError) {
-      throw new Error(listError.message);
-    }
-
-    const users = usersPage?.users ?? [];
-    const matchedUser = users.find(
-      (user) => user.email?.toLowerCase() === email,
-    );
-    if (matchedUser) return matchedUser;
-    if (users.length < 200) return null;
-    page += 1;
-  }
-}
-
-async function upsertProfileForAuthUser(
-  adminClient: ReturnType<typeof createAdminClient>,
-  {
-    id,
-    email,
-    fullName,
-    role,
-  }: { id: string; email: string; fullName: string; role: UserRole },
-) {
-  const { error } = await adminClient.from("profiles").upsert(
-    {
-      id,
-      full_name: fullName,
-      email,
-      role,
-    },
-    { onConflict: "id" },
-  );
-  if (error) throw new Error(error.message);
-}
-
-export async function reconcileInternalAuthUsers(): Promise<number> {
-  await requireRole(["admin"]);
-  const adminClient = createAdminClient();
-  let page = 1;
-  let synced = 0;
-
-  while (true) {
-    const { data: usersPage, error } = await adminClient.auth.admin.listUsers({
-      page,
-      perPage: 200,
-    });
-    if (error)
-      throw new Error(
-        `Unable to list auth users for reconciliation: ${error.message}`,
-      );
-    const users = usersPage?.users ?? [];
-    for (const user of users) {
-      const roleInput = String(user.user_metadata?.role ?? "").toLowerCase();
-      if (!isUserRole(roleInput)) continue;
-      await upsertProfileForAuthUser(adminClient, {
-        id: user.id,
-        email: String(user.email ?? "").toLowerCase(),
-        fullName: String(
-          user.user_metadata?.full_name ?? user.email ?? "Unknown User",
-        ),
-        role: roleInput,
-      });
-      synced += 1;
-    }
-    if (users.length < 200) break;
-    page += 1;
-  }
-
-  return synced;
-}
+const passwordSchema = z.string().min(12).max(72);
+const creationSchema = z.object({
+  fullName: z.string().trim().min(1).max(150),
+  email: z.string().trim().toLowerCase().email(),
+  password: passwordSchema,
+  confirmPassword: z.string(),
+});
 
 export async function createRepUserAction(
-  _prevState: CreateUserFormState,
+  _: CreateUserFormState,
   formData: FormData,
 ): Promise<CreateUserFormState> {
   await requireRole(["admin"]);
-
-  const fullName = String(formData.get("fullName") ?? "").trim();
-  const email = String(formData.get("email") ?? "")
-    .trim()
-    .toLowerCase();
-  const roleInput = String(formData.get("role") ?? "rep");
-  const password = String(formData.get("password") ?? "");
-  const confirmPassword = String(formData.get("confirmPassword") ?? "");
-  const role: UserRole = isUserRole(roleInput) ? roleInput : "rep";
-
-  if (!fullName || !email || !password || !confirmPassword) {
-    return {
-      status: "error",
-      message: "Full name, email, password, and confirm password are required.",
-    };
+  const parsed = creationSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success || parsed.data.password !== parsed.data.confirmPassword) {
+    return { status: "error", message: "Enter a valid name and email, and matching passwords of 12–72 characters." };
   }
 
-  if (password !== confirmPassword) {
-    return {
-      status: "error",
-      message: "Passwords do not match. Please re-enter both password fields.",
-    };
+  const { fullName, email, password } = parsed.data;
+  const admin = createAdminClient();
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
+  if (error || !data.user) {
+    return { status: "error", message: error?.message ?? "Could not create the Auth account." };
   }
 
-  const adminClient = createAdminClient();
-
-  let existingUser = null;
-  try {
-    existingUser = await findAuthUserByEmail(adminClient, email);
-  } catch (error) {
+  const { error: profileError } = await admin.from("profiles").insert({
+    id: data.user.id,
+    full_name: fullName,
+    email,
+    role: "rep",
+  });
+  if (profileError) {
+    const { error: cleanupError } = await admin.auth.admin.deleteUser(data.user.id);
+    if (cleanupError) console.error("[users] Could not remove newly created Auth account", { id: data.user.id, code: cleanupError.code });
     return {
       status: "error",
-      message: `Failed to check for existing auth user ${email}: ${String(error)}`,
-    };
-  }
-
-  let targetUserId: string | null = existingUser?.id ?? null;
-  const reusedExistingUser = Boolean(existingUser);
-
-  if (existingUser) {
-    const { error: updateExistingError } =
-      await adminClient.auth.admin.updateUserById(existingUser.id, {
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName,
-          role,
-        },
-      });
-
-    if (updateExistingError) {
-      return {
-        status: "error",
-        message: `Failed to update existing auth user ${email}: ${updateExistingError.message}`,
-      };
-    }
-  } else {
-    const { data: createdUser, error: authError } =
-      await adminClient.auth.admin.createUser({
-        email,
-        password,
-        email_confirm: true,
-        user_metadata: {
-          full_name: fullName,
-          role,
-        },
-      });
-    if (authError || !createdUser?.user?.id) {
-      return {
-        status: "error",
-        message:
-          authError?.message ?? `Failed to create auth user for ${email}.`,
-      };
-    }
-    targetUserId = createdUser.user.id;
-  }
-
-  try {
-    await upsertProfileForAuthUser(adminClient, {
-      id: targetUserId!,
-      email,
-      fullName,
-      role,
-    });
-  } catch (error) {
-    return {
-      status: "error",
-      message: `Auth user synced, but profile write failed: ${String(error)}`,
+      message: cleanupError
+        ? "CRM profile setup failed. Ask a Supabase administrator to inspect the new Auth account before retrying."
+        : "CRM profile setup failed. The new Auth account was removed.",
     };
   }
 
   revalidatePath("/admin/users");
+  return { status: "success", message: `Rep account created for ${email}.` };
+}
 
-  return {
-    status: "success",
-    message: reusedExistingUser
-      ? `Existing user updated and synced: ${email}. Password reset and profile are now aligned.`
-      : `User created: ${email}. The user can log in immediately with the admin-provided password.`,
-  };
+export async function manageRepUserAction(
+  _: CreateUserFormState,
+  formData: FormData,
+): Promise<CreateUserFormState> {
+  await requireRole(["admin"]);
+  const id = z.string().uuid().safeParse(formData.get("user_id"));
+  const operation = z.enum(["reset_password", "activate", "deactivate", "reassign"]).safeParse(formData.get("operation"));
+  if (!id.success || !operation.success) return { status: "error", message: "Choose a rep and a valid action." };
+
+  const supabase = await createClient();
+  const { data: rep, error: lookupError } = await supabase.from("profiles").select("role").eq("id", id.data).maybeSingle();
+  if (lookupError || rep?.role !== "rep") return { status: "error", message: "This action is available for rep accounts only." };
+
+  if (operation.data === "reassign") {
+    const recipient = z.string().uuid().safeParse(formData.get("recipient"));
+    if (!recipient.success || recipient.data === id.data) return { status: "error", message: "Choose a different active rep." };
+    const { data: count, error } = await supabase.rpc("crm_reassign_leads", { source_rep: id.data, target_rep: recipient.data });
+    if (error) return { status: "error", message: "Could not reassign active leads. Verify that the destination rep is active." };
+    revalidatePath("/hot-leads");
+    revalidatePath("/admin");
+    revalidatePath("/dashboard");
+    return { status: "success", message: `${count} active leads reassigned.` };
+  }
+
+  const admin = createAdminClient();
+  if (operation.data === "reset_password") {
+    const password = passwordSchema.safeParse(formData.get("password"));
+    if (!password.success || password.data !== formData.get("confirmPassword")) {
+      return { status: "error", message: "Enter matching passwords of 12–72 characters." };
+    }
+    const { error } = await admin.auth.admin.updateUserById(id.data, { password: password.data });
+    return error ? { status: "error", message: "Supabase could not reset the password." }
+      : { status: "success", message: "Password updated." };
+  }
+
+  const active = operation.data === "activate";
+  // The profile flag gates every CRM data access, including existing sessions.
+  if (!active) {
+    const { error } = await admin.from("profiles").update({ is_active: false }).eq("id", id.data).eq("role", "rep");
+    if (error) return { status: "error", message: "Could not suspend CRM access." };
+    revalidatePath("/admin/users");
+  }
+
+  const { error: authError } = await admin.auth.admin.updateUserById(id.data, { ban_duration: active ? "none" : "876000h" });
+  if (authError) return { status: "error", message: active ? "Supabase could not reactivate sign-in." : "CRM access is suspended. Supabase could not also suspend sign-in. Retry deactivation." };
+
+  if (active) {
+    const { error } = await admin.from("profiles").update({ is_active: true }).eq("id", id.data).eq("role", "rep");
+    if (error) return { status: "error", message: "Sign-in was enabled but CRM access remains suspended. Retry activation." };
+  }
+  revalidatePath("/admin/users");
+  return { status: "success", message: active ? "Rep activated." : "Rep deactivated. CRM access is suspended for existing sessions." };
 }

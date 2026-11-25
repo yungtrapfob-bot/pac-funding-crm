@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import {
   addOffer,
+  addDealDocuments,
   selectOffer,
   updateDealDetails,
   updateDealStage,
@@ -58,7 +59,7 @@ export default async function DealDetailPage({
   searchParams,
 }: {
   params: { id: string };
-  searchParams?: { saved?: string; context?: string };
+  searchParams?: { saved?: string; context?: string; offer_error?: string; upload?: string };
 }) {
   const { profile } = await requireUser();
   const isAdmin = profile.role === "admin";
@@ -68,7 +69,7 @@ export default async function DealDetailPage({
     .select("*, assigned_rep:assigned_rep_id(full_name)")
     .eq("id", params.id);
   if (profile.role === "rep")
-    q = q.or(`assigned_rep_id.eq.${profile.id},closer_rep_id.eq.${profile.id}`);
+    q = q.eq("assigned_rep_id", profile.id);
 
   const { data: dealRows, error: dealError } = await q.limit(1);
   if (dealError) throw new Error(dealError.message);
@@ -93,14 +94,7 @@ export default async function DealDetailPage({
     .select("*")
     .eq("deal_id", params.id)
     .order("created_at", { ascending: false });
-  const fileRows = await Promise.all(
-    (files ?? []).map(async (file) => {
-      const { data } = await supabase.storage
-        .from("deal-files")
-        .createSignedUrl(file.path, 60 * 60);
-      return { ...file, signedUrl: data?.signedUrl ?? null };
-    }),
-  );
+  const fileRows = files ?? [];
 
   const { data: submissionLogs } = isAdmin
     ? await supabase
@@ -193,6 +187,7 @@ export default async function DealDetailPage({
 
   return (
     <div className="space-y-4">
+      {searchParams?.offer_error && <p role="alert" className="text-sm text-red-800">This offer is unavailable for selection. Refresh and try again.</p>}
       <div className="rounded-xl border border-border/80 bg-card/95 p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">{deal.business_name}</h1>
@@ -470,7 +465,7 @@ export default async function DealDetailPage({
               >
                 {o.notes || o.stipulations || "—"}
               </p>
-              {isAdmin ? (
+              {!["Funded", "KIF"].includes(toUiPipelineStage(deal.current_stage)) ? (
                 <form action={selectOffer}>
                   <input type="hidden" name="deal_id" value={deal.id} />
                   <input type="hidden" name="offer_id" value={o.id} />
@@ -481,14 +476,14 @@ export default async function DealDetailPage({
                         ? "border-emerald-300 bg-emerald-100 text-emerald-900 hover:bg-emerald-100"
                         : undefined
                     }
-                    disabled={selected?.id === o.id || o.status === "declined"}
+                    disabled={selected?.id === o.id || !["open", "accepted"].includes(o.status)}
                   >
                     {selected?.id === o.id ? "Selected" : "Select Offer"}
                   </Button>
                 </form>
               ) : (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Offer selection is admin-only.
+                  This deal is closed.
                 </p>
               )}
             </div>
@@ -498,28 +493,24 @@ export default async function DealDetailPage({
 
       <Card>
         <h2 className="mb-2 text-lg font-medium">Uploaded Files / Docs</h2>
+        {searchParams?.upload === 'incomplete' && <p role="alert" className="mb-2 text-sm text-red-800">Some documents could not be saved. Check the list and upload the missing files below.</p>}
+        {searchParams?.upload === 'missing' && <p role="alert" className="mb-2 text-sm text-red-800">Choose a document to upload.</p>}
+        {searchParams?.upload === 'complete' && <p role="status" className="mb-2 text-sm text-emerald-800">Documents uploaded.</p>}
+        <form action={addDealDocuments} className="mb-3 grid gap-2 text-sm md:grid-cols-2">
+          <label>Signed application<Input type="file" name="application_file" /></label>
+          <label>Bank statements<Input type="file" name="bank_statements" multiple /></label>
+          <Button type="submit">Upload documents</Button>
+        </form>
+
         <div className="space-y-2 text-sm">
           {fileRows.length ? (
             fileRows.map((f) => (
               <div key={f.id} className="rounded border p-3">
                 <p className="font-medium">{f.file_type}</p>
                 <p className="break-all text-muted-foreground">{f.path}</p>
-                {f.signedUrl ? (
-                  <div className="mt-2">
-                    <Link
-                      href={f.signedUrl}
-                      target="_blank"
-                      className="text-primary underline"
-                    >
-                      Open / Download
-                    </Link>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    File link unavailable. Please re-open this page to refresh
-                    signed links.
-                  </p>
-                )}
+                <Link href={`/api/deal-files/${f.id}`} prefetch={false} className="mt-2 inline-block text-primary underline">
+                  Download
+                </Link>
               </div>
             ))
           ) : (

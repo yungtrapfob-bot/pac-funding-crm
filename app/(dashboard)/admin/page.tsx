@@ -1,20 +1,21 @@
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Card } from '@/components/ui/card';
-import { reconcileInternalAuthUsers } from '@/actions/admin-users';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { readPages } from '@/lib/supabase/read-pages';
 import { getInternalUserProfiles } from '@/lib/internal-users';
 import { toUiPipelineStage } from '@/lib/utils';
 import Link from 'next/link';
 
 export default async function AdminDashboardPage() {
   await requireRole(['admin']);
-  await reconcileInternalAuthUsers();
   const supabase = await createClient();
-  const { data: deals } = await supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at');
-  const { data: hotLeads } = await supabase.from('hot_leads').select('id,assigned_rep_id,created_at');
-  const { data: offers } = await supabase.from('offers').select('deal_id, approval_amount, status');
-
+  const [deals, hotLeads, offers, internalProfiles] = await Promise.all([
+    readPages((from, to) => supabase.from('deals').select('id,assigned_rep_id,current_stage,funded_amount,submitted_at').order('id').range(from, to)),
+    readPages((from, to) => supabase.from('hot_leads').select('id,assigned_rep_id,created_at').is('archived_at', null).order('id').range(from, to)),
+    readPages((from, to) => supabase.from('offers').select('deal_id,approval_amount,status').eq('status', 'open').order('id').range(from, to)),
+    getInternalUserProfiles(),
+  ]);
 
   const hasStage = (dealStage: string | null, acceptedRawStages: string[], acceptedUiStages: string[]) => {
     if (!dealStage) return false;
@@ -22,17 +23,16 @@ export default async function AdminDashboardPage() {
     return acceptedUiStages.includes(toUiPipelineStage(dealStage));
   };
 
-  const apps = deals?.length ?? 0;
-  const underwritingDeals = deals?.filter((d) => hasStage(d.current_stage, ['Application Submitted', 'In Underwriting'], ['In Underwriting'])).length ?? 0;
-  const offersDeals = deals?.filter((d) => hasStage(d.current_stage, ['Offers / Declines Received'], ['Offers'])).length ?? 0;
-  const contractsRequestedDeals = deals?.filter((d) => hasStage(d.current_stage, ['Contracts Requested'], ['Offers'])).length ?? 0;
-  const contractsOutDeals = deals?.filter((d) => hasStage(d.current_stage, ['Contracts Signed', 'Contracts Out'], ['Contracts Out'])).length ?? 0;
-  const fundedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length ?? 0;
-  const killedDeals = deals?.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length ?? 0;
-  const totalOpenApprovalAmount = (offers ?? []).filter((o) => o.status === 'open').reduce((sum, o) => sum + Number(o.approval_amount), 0);
-  const internalProfiles = await getInternalUserProfiles();
+  const apps = deals.length;
+  const underwritingDeals = deals.filter((d) => hasStage(d.current_stage, ['Application Submitted', 'In Underwriting'], ['In Underwriting'])).length;
+  const offersDeals = deals.filter((d) => hasStage(d.current_stage, ['Offers / Declines Received'], ['Offers'])).length;
+  const contractsRequestedDeals = deals.filter((d) => hasStage(d.current_stage, ['Contracts Requested'], [])).length;
+  const contractsOutDeals = deals.filter((d) => hasStage(d.current_stage, ['Contracts Signed', 'Contracts Out'], ['Contracts Out'])).length;
+  const fundedDeals = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'Funded').length;
+  const killedDeals = deals.filter((d) => toUiPipelineStage(d.current_stage) === 'KIF').length;
+  const totalOpenApprovalAmount = offers.reduce((sum, o) => sum + Number(o.approval_amount), 0);
 
-  const dealRepLookup = new Map((deals ?? []).map((d) => [d.id, d.assigned_rep_id]));
+  const dealRepLookup = new Map(deals.map((d) => [d.id, d.assigned_rep_id]));
   type RepMetrics = {
     hotLeads: number;
     appsSubmitted: number;
@@ -66,27 +66,28 @@ export default async function AdminDashboardPage() {
     return created;
   };
 
-  (hotLeads ?? []).forEach((lead) => {
+  hotLeads.forEach((lead) => {
     if (!lead.assigned_rep_id) return;
     const metrics = ensureRepMetrics(lead.assigned_rep_id);
     metrics.hotLeads += 1;
     if (!metrics.lastActivity || new Date(lead.created_at) > new Date(metrics.lastActivity)) metrics.lastActivity = lead.created_at;
   });
 
-  (deals ?? []).forEach((deal) => {
+  deals.forEach((deal) => {
     if (!deal.assigned_rep_id) return;
     const metrics = ensureRepMetrics(deal.assigned_rep_id);
     metrics.appsSubmitted += 1;
     if (hasStage(deal.current_stage, ['Application Submitted', 'In Underwriting'], ['In Underwriting'])) metrics.underwriting += 1;
     if (hasStage(deal.current_stage, ['Offers / Declines Received'], ['Offers'])) metrics.offers += 1;
     if (hasStage(deal.current_stage, ['Contracts Signed', 'Contracts Out'], ['Contracts Out'])) metrics.contractsOut += 1;
-    if (toUiPipelineStage(deal.current_stage) === 'Funded') metrics.fundedDeals += 1;
-    metrics.totalFundedAmount += Number(deal.funded_amount ?? 0);
+    if (toUiPipelineStage(deal.current_stage) === 'Funded') {
+      metrics.fundedDeals += 1;
+      metrics.totalFundedAmount += Number(deal.funded_amount ?? 0);
+    }
     if (!metrics.lastActivity || new Date(deal.submitted_at) > new Date(metrics.lastActivity)) metrics.lastActivity = deal.submitted_at;
   });
 
-  (offers ?? []).forEach((offer) => {
-    if (offer.status !== 'open') return;
+  offers.forEach((offer) => {
     const repId = dealRepLookup.get(offer.deal_id);
     if (!repId) return;
     const metrics = ensureRepMetrics(repId);

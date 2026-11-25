@@ -1,7 +1,6 @@
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
-import { MissingProfileError, ProfileQueryError } from '@/lib/auth-errors';
+import { ProfileQueryError } from '@/lib/auth-errors';
 import type { UserRole } from '@/types/db';
 
 export async function requireUser() {
@@ -40,32 +39,13 @@ export async function requireUser() {
   }
 
   if (!profile) {
-    const roleInput = String(user.user_metadata?.role ?? '').toLowerCase();
-    const isUserRole = roleInput === 'admin' || roleInput === 'rep';
-    if (isUserRole && user.email) {
-      const adminClient = createAdminClient();
-      const { error: repairError } = await adminClient.from('profiles').upsert(
-        {
-          id: user.id,
-          email: user.email.toLowerCase(),
-          full_name: String(user.user_metadata?.full_name ?? user.email),
-          role: roleInput as UserRole
-        },
-        { onConflict: 'id' }
-      );
-      if (!repairError) {
-        const { data: repairedProfile } = await supabase.from('profiles').select('*').eq('id', user.id).maybeSingle();
-        if (repairedProfile) {
-          return { user, profile: repairedProfile as { role: UserRole; full_name: string; id: string } };
-        }
-      }
-    }
-
     console.error('[auth] missing profile row for authenticated user', {
       userId: user.id
     });
-    throw new MissingProfileError();
+    redirect('/login?error=CRM%20access%20unavailable');
   }
+
+  if (!profile.is_active) redirect('/login?error=Account%20inactive');
 
   return { user, profile: profile as { role: UserRole; full_name: string; id: string } };
 }

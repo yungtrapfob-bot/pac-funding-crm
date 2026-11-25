@@ -37,23 +37,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  if (user && isAuthRoute) {
-    return NextResponse.redirect(new URL('/dashboard', req.url));
-  }
-
-  if (user && req.nextUrl.pathname.startsWith('/admin')) {
-    const { data: profile, error: profileError } = await supabase.from('profiles').select('role').eq('id', user.id).maybeSingle();
-    if (profileError) {
-      console.error('[middleware] failed to query profile role for admin gate', {
-        userId: user.id,
-        profileError: profileError.message,
-        profileErrorCode: profileError.code ?? null
-      });
-      return res;
-    }
-    if (profile?.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', req.url));
-    }
+  if (user && (isAuthRoute || req.nextUrl.pathname.startsWith('/admin'))) {
+    const { data: role } = await supabase.rpc('crm_role');
+    if (isAuthRoute && role) return NextResponse.redirect(new URL('/dashboard', req.url));
+    if (!isAuthRoute && role === 'rep') return NextResponse.redirect(new URL('/dashboard', req.url));
   }
 
   return res;

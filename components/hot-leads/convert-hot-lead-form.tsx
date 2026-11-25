@@ -50,14 +50,14 @@ export function ConvertHotLeadForm({ lead }: { lead: LeadIntake }) {
 
       <section className="space-y-3">
         <h3 className="text-base font-semibold">Notes</h3>
-        <Field label="Notes"><textarea name="notes" defaultValue={lead.notes ?? ''} className="min-h-24 rounded-md border p-2 text-sm" /></Field>
-        <Field label="Internal Notes"><textarea name="internal_notes" className="min-h-24 rounded-md border p-2 text-sm" /></Field>
+        <Field label="Notes"><textarea name="notes" defaultValue={lead.notes ?? ''} className="min-h-24 rounded-md border border-border bg-card p-2 text-sm text-foreground" /></Field>
+        <Field label="Internal Notes"><textarea name="internal_notes" className="min-h-24 rounded-md border border-border bg-card p-2 text-sm text-foreground" /></Field>
       </section>
 
       <section className="space-y-3">
         <h3 className="text-base font-semibold">File Uploads</h3>
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Field label="Application File (single)"><Input type="file" name="application_file" /><span className="text-xs text-muted-foreground">Attach one signed application if available.</span></Field>
+          <Field label="Application File (single)"><Input type="file" name="application_file" required /><span className="text-xs text-muted-foreground">Attach one signed application.</span></Field>
           <Field label="Bank Statements / Docs (multiple files)"><Input type="file" name="bank_statements" multiple required /><span className="text-xs text-muted-foreground">Select all statement months and supporting docs before submitting.</span></Field>
         </div>
       </section>

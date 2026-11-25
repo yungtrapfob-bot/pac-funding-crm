@@ -3,41 +3,12 @@ import { startHotLeadConversion, updateHotLead } from '@/actions/deals';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { DeleteHotLeadForm } from '@/components/hot-leads/delete-hot-lead-form';
 import { requireUser } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 
-function formatDateTimeLocal(value?: string | null) {
-  if (!value) return '';
-  const date = new Date(value);
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Los_Angeles',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).formatToParts(date);
-  const get = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
-  const year = get('year');
-  const month = get('month');
-  const day = get('day');
-  const hours = get('hour');
-  const minutes = get('minute');
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
+import { formatPacificDateTime, pacificInputValue } from '@/lib/pacific-time';
 
-function formatPacificDateTime(value?: string | null) {
-  if (!value) return '';
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(value));
-}
-
-export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string; delete?: string } }) {
+export default async function HotLeadDetail({ params, searchParams }: { params: { id: string }; searchParams?: { saved?: string; created?: string } }) {
   const { profile } = await requireUser();
   const supabase = await createClient();
   let leadQuery = supabase.from('hot_leads').select('*, profiles:assigned_rep_id(full_name)').eq('id', params.id);
@@ -58,20 +29,22 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
     : searchParams?.created === '1'
       ? 'Hot lead created successfully.'
       : null;
-  const attemptedConvertedDelete = searchParams?.delete === 'converted';
 
   const { data: conversionActivity } = await supabase.from('activities').select('deal_id').eq('hot_lead_id', lead.id).eq('activity_type', 'hot_lead_converted').order('created_at', { ascending: false }).limit(1).maybeSingle();
 
-  let convertedDeal: { id: string; current_stage: string } | null = null;
-  if (conversionActivity?.deal_id) {
+  const { data: directlyLinkedDeal } = await supabase.from('deals').select('id,current_stage').eq('converted_from_hot_lead_id', lead.id).limit(1).maybeSingle();
+  let convertedDeal: { id: string; current_stage: string } | null = directlyLinkedDeal;
+  if (!convertedDeal && conversionActivity?.deal_id) {
     const { data: linkedDeal } = await supabase.from('deals').select('id,current_stage').eq('id', conversionActivity.deal_id).maybeSingle();
     convertedDeal = linkedDeal;
   }
 
   return (
     <div className="space-y-4">
+      {searchParams?.saved === 'invalid_time' && <p role="alert" className="text-red-800">Choose a valid Pacific follow-up date and time.</p>}
+      {(searchParams?.saved === 'timeline_warning' || searchParams?.created === 'timeline_warning') && <p role="alert" className="text-red-800">The lead was saved, but its timeline entry could not be added. Check the timeline before retrying the note.</p>}
       {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
-      {attemptedConvertedDelete ? <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">This lead has already been converted, so it was not hard-deleted. Use the created deal as the system of record{convertedDeal ? <>: {' '}<Link href={`/deals/${convertedDeal.id}`} className="font-medium underline">open deal ({convertedDeal.current_stage})</Link>.</> : '.'}</div> : null}
+
       <Card>
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -79,35 +52,21 @@ export default async function HotLeadDetail({ params, searchParams }: { params: 
             <p className="text-sm text-muted-foreground">Lead workbench: follow-up, notes, callbacks, and conversion readiness.</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
+            {convertedDeal ? <Link href={`/deals/${convertedDeal.id}`} className="rounded-md border border-border px-3 py-2 text-sm">View Created Deal ({convertedDeal.current_stage})</Link> : lead.archived_at ? null : <form action={startHotLeadConversion}><input type="hidden" name="hot_lead_id" value={lead.id} /><Button type="submit">Convert to Deal / Send to Underwriting</Button></form>}
           </div>
         </div>
-        {profile.role === 'admin' ? (
-          <div className="mb-4 rounded-md border border-border bg-muted/20 p-3 text-sm">
-            <p className="font-medium">Admin cleanup</p>
-            {convertedDeal ? (
-              <p className="mt-1 text-muted-foreground">This lead has already been converted. Hard deletion is disabled so the conversion audit trail stays intact. Open the created deal instead: <Link href={`/deals/${convertedDeal.id}`} className="font-medium text-primary underline">open deal ({convertedDeal.current_stage})</Link>.</p>
-            ) : (
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-                <p className="max-w-2xl text-muted-foreground">Use deletion only for junk or test leads. This removes the lead and its lead activity timeline after confirmation.</p>
-                <DeleteHotLeadForm leadId={lead.id} businessName={lead.business_name ?? 'this lead'} />
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        <form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        {lead.archived_at ? <p>Archived lead</p> : <form action={updateHotLead} className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <input type="hidden" name="id" value={lead.id} />
           <Input name="business_name" defaultValue={lead.business_name} />
           <Input name="owner_name" defaultValue={lead.owner_name} />
           <Input name="phone" defaultValue={lead.phone} />
           <Input name="email" defaultValue={lead.email} />
           <select name="follow_up_status" defaultValue={lead.follow_up_status} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="pending">pending</option><option value="contacted">contacted</option><option value="scheduled">scheduled</option><option value="stale">stale</option></select>
-          <Input type="datetime-local" name="next_follow_up_date" defaultValue={formatDateTimeLocal(lead.next_follow_up_date)} />
+          <Input type="datetime-local" name="next_follow_up_date" aria-label="Follow-up date and time (Pacific)" defaultValue={lead.next_follow_up_date ? pacificInputValue(lead.next_follow_up_date) : ''} />
           <Input name="outcome_tag" defaultValue={lead.outcome_tag ?? ''} placeholder="Outcome tag (interested, docs requested, not qualified, etc.)" className="md:col-span-2" />
           <textarea name="activity_note" placeholder="Add follow-up activity note (new timeline entry)" className="min-h-24 rounded-md border border-border bg-transparent p-3 text-sm md:col-span-2" />
           <Button type="submit" className="md:col-span-2">Save lead updates</Button>
-        </form>
+        </form>}
       </Card>
 
       <Card>
