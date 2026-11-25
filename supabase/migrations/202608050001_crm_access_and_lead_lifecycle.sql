@@ -283,7 +283,7 @@ as $$
 declare deal public.deals%rowtype; selected public.offers%rowtype; caller_role text;
 begin
   caller_role := public.crm_role();
-  if caller_role is null then raise exception 'Active CRM account required.'; end if;
+  if coalesce(caller_role, '') not in ('admin', 'rep') then raise exception 'Active CRM account required.'; end if;
   select * into deal from public.deals where id = target_deal for update;
   if not found or (caller_role <> 'admin' and deal.assigned_rep_id is distinct from auth.uid()) then
     raise exception 'Deal is unavailable.';

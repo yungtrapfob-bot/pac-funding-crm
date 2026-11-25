@@ -88,6 +88,36 @@ begin
   end;
   perform public.crm_select_offer('c0000000-0000-4000-8000-000000000001', 'd0000000-0000-4000-8000-000000000001');
   assert (select current_stage::text from public.deals where id = 'c0000000-0000-4000-8000-000000000001') = 'Contracts Out';
+
+  declare lead_id uuid; deal_id uuid;
+  begin
+    insert into public.hot_leads (business_name, owner_name, phone, email, assigned_rep_id, next_follow_up_date)
+      values ('QA rep-created lead', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), '2027-07-12T16:30:00Z')
+      returning id into lead_id;
+    assert exists (select 1 from public.hot_leads where id = lead_id and owner_profile_id = auth.uid()), 'Rep-owned lead creation';
+    insert into public.activities (hot_lead_id, actor_id, activity_type, details)
+      values (lead_id, auth.uid(), 'hot_lead_activity', '{"note":"Synthetic follow-up"}');
+    update public.hot_leads set next_follow_up_date = '2027-07-12T17:30:00Z' where id = lead_id;
+    assert found, 'Rep follow-up update';
+
+    insert into public.deals (business_name, owner_name, phone, email, assigned_rep_id, converted_from_hot_lead_id)
+      values ('QA rep-created deal', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), lead_id)
+      returning id into deal_id;
+    assert exists (select 1 from public.deals where id = deal_id and owner_profile_id = auth.uid()), 'Rep-owned deal conversion';
+    insert into public.activities (hot_lead_id, deal_id, actor_id, activity_type)
+      values (lead_id, deal_id, auth.uid(), 'hot_lead_converted');
+    insert into storage.objects (bucket_id, name)
+      values ('deal-files', deal_id::text || '/rep-qa.pdf');
+    insert into public.deal_files (deal_id, file_type, path)
+      values (deal_id, 'statement', deal_id::text || '/rep-qa.pdf');
+    begin
+      insert into public.deals (business_name, owner_name, phone, email, assigned_rep_id, current_stage)
+        values ('QA disallowed funding', 'Synthetic', '5550100', 'qa@example.test', auth.uid(), 'Funded');
+      raise exception 'Unexpected rep funded deal insertion';
+    exception when insufficient_privilege then null;
+    end;
+  end;
+
 end $$;
 
 select set_config('request.jwt.claim.sub', 'a0000000-0000-4000-8000-000000000001', true);
