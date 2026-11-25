@@ -65,6 +65,7 @@ export function LeadSelection({ leads, children }: { leads: Lead[]; children: Re
           <label className="flex items-center gap-2">
             <span>Actions</span>
             <select
+              aria-label="Lead actions"
               value={operation ?? ''}
               disabled={!selected.length}
               onChange={(event) => setOperation((event.target.value || null) as Operation | null)}
