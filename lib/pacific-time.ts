@@ -48,3 +48,11 @@ export function parsePacificInput(value: string): string | null {
   }
   return null;
 }
+
+const followUpDay = new Intl.DateTimeFormat('en-US', { timeZone, month: 'short', day: 'numeric' });
+const followUpTime = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', minute: '2-digit' });
+
+export function formatPacificFollowUp(value: string) {
+  const date = new Date(value);
+  return `${followUpDay.format(date)} · ${followUpTime.format(date)}`;
+}

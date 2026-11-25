@@ -1,13 +1,17 @@
 import Link from 'next/link';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import { Card } from '@/components/ui/card';
 import { requireUser } from '@/lib/auth';
-import { formatPacificDateTime, pacificDate } from '@/lib/pacific-time';
-import { dealStages, leadStages } from '@/lib/sales-labels';
+import { formatPacificFollowUp, pacificDate } from '@/lib/pacific-time';
+import { dealQueueGroups, dealStages, leadStages } from '@/lib/sales-labels';
 import { createClient } from '@/lib/supabase/server';
 import { readPages } from '@/lib/supabase/read-pages';
 
-export default async function Dashboard() {
+const followUpFilters = { due: 'All due', overdue: 'Overdue', today: 'Today', upcoming: 'Upcoming' } as const;
+
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ followups?: string; all?: string }> }) {
+  const filters = await searchParams;
+  const filter = filters.followups && Object.hasOwn(followUpFilters, filters.followups)
+    ? filters.followups as keyof typeof followUpFilters : 'due';
   const { profile } = await requireUser();
   const supabase = await createClient();
   const isAdmin = profile.role === 'admin';
@@ -16,15 +20,16 @@ export default async function Dashboard() {
     readPages((from,to) => supabase.from('hot_leads')
       .select('id,business_name,sales_stage,next_follow_up_date,last_contact_date,notes,assigned_rep_id')
       .is('archived_at',null).is('converted_at',null).eq('sales_lost',false).eq('sales_review',false).eq('sales_test',false)
-      .order('id').range(from,to)),
+      .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
     readPages((from,to) => supabase.from('crm_sales_deal_queue').select('id,business_name,queue_stage,sales_follow_up_at,sales_next_action,assigned_rep_id')
-      .not('queue_stage','in','(funded,lost)').eq('sales_test',false).order('id').range(from,to)),
+      .not('queue_stage','in','(funded,lost)').eq('sales_test',false)
+      .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
   ]);
   const queues = [
     ['Active interested leads', leads.filter(l => l.sales_stage === 'interested').length, '/hot-leads?stage=interested'],
     ['Waiting for application or statements', leads.filter(l => l.sales_stage !== 'interested').length, '/hot-leads?stage=waiting'],
-    ...Object.entries(dealStages).filter(([stage]) => !['funded','lost'].includes(stage)).map(([stage,label]) =>
-      [label, deals.filter(d => d.queue_stage === stage).length, '/deals?queue=' + stage]),
+    ...Object.entries(dealQueueGroups).map(([group, {label, stages}]) =>
+      [label, deals.filter(d => stages.includes(d.queue_stage)).length, '/deals?group=' + group]),
   ] as [string,number,string][];
   const followups = [
     ...leads.filter(l => l.next_follow_up_date).map(l => ({ ...l, due: l.next_follow_up_date!, href: '/hot-leads/' + l.id,
@@ -36,45 +41,73 @@ export default async function Dashboard() {
   const overdue = followups.filter(task => Date.parse(task.due) < Date.parse(now));
   const dueToday = followups.filter(task => pacificDate(task.due) === today && Date.parse(task.due) >= Date.parse(now));
   const upcoming = followups.filter(task => pacificDate(task.due) > today);
-  const attention = deals.filter(d => ['missing_documents','approved','pitched','contracts_out','stipulations','final_conditions'].includes(d.queue_stage));
-  const repIds = [...new Set([...followups,...attention].flatMap(row => row.assigned_rep_id ? [row.assigned_rep_id] : []))];
-  const reps = repIds.length ? await supabase.from('profiles').select('id,full_name').in('id',repIds) : {data:[]};
+  const tasks = { due: [...overdue, ...dueToday], overdue, today: dueToday, upcoming }[filter];
+  const limit = filters.all === '1' ? 50 : 5;
+  const visible = tasks.slice(0, limit);
+  const repIds = [...new Set(visible.flatMap(row => row.assigned_rep_id ? [row.assigned_rep_id] : []))];
+  const reps = isAdmin && repIds.length
+    ? await supabase.from('profiles').select('id,full_name').in('id',repIds)
+    : { data: [] };
   const names = new Map((reps.data ?? []).map(rep => [rep.id, rep.full_name]));
-  return <div className="space-y-6">
+  return <div className="space-y-4">
     <header className="flex flex-wrap items-center justify-between gap-3">
-      <h1 className="text-2xl font-semibold">{isAdmin ? 'Company work queue' : 'Daily action center'}</h1>
-      <Link className="text-primary underline" href={isAdmin ? '/admin' : '/performance'}>{isAdmin ? 'Sales Performance Center' : 'My performance'}</Link>
-    </header>
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      {[['Overdue',overdue],['Due today',dueToday],['Upcoming',upcoming]].map(([title,tasks]) => {
-        const items = tasks as typeof followups;
-        return <Card key={String(title)} className="space-y-2">
-          <h2 className="font-semibold">{String(title)} <span className="text-muted-foreground">· {items.length}</span></h2>
-          {!items.length && <p className="text-sm text-muted-foreground">No follow-ups.</p>}
-          {items.slice(0,8).map(item => <Link key={item.href} href={item.href + '#sales-actions'} className="block rounded border border-border p-2 text-sm hover:bg-muted/40">
-            <span className="font-medium text-primary">{item.business_name}</span>
-            <p>{item.action} · {item.stage}</p>
-            <p className="text-muted-foreground">{formatPacificDateTime(item.due)} · {names.get(item.assigned_rep_id) ?? 'Unassigned'}</p>
-            {item.last_contact_date && <p className="text-muted-foreground">Last contact {item.last_contact_date}</p>}
-            {item.notes && <p className="truncate text-muted-foreground">{item.notes}</p>}
-          </Link>)}
-          {items.length > 8 && <Link href={isAdmin ? '/admin?metric=followups' : '/performance?metric=followups'} className="text-sm text-primary underline">View all follow-ups</Link>}
-        </Card>;
-      })}
-    </div>
-    <Card>
-      <h2 className="mb-2 font-semibold">Deals needing attention <span className="text-muted-foreground">· {attention.length}</span></h2>
-      {!attention.length && <p className="text-sm text-muted-foreground">No deals need attention in these queues.</p>}
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {attention.slice(0,12).map(deal => <Link key={deal.id} href={`/deals/${deal.id}#sales-actions`} className="rounded border border-border p-2 text-sm hover:bg-muted/40">
-          <span className="font-medium text-primary">{deal.business_name}</span><p>{dealStages[deal.queue_stage]} · {names.get(deal.assigned_rep_id) ?? 'Unassigned'}</p>
-        </Link>)}
+      <div>
+        <h1 className="text-2xl font-semibold">{isAdmin ? 'Company dashboard' : 'My dashboard'}</h1>
+        <Link className="text-sm text-primary hover:underline" href={isAdmin ? '/admin' : '/performance'}>
+          {isAdmin ? 'Sales Performance Center' : 'My performance'}
+        </Link>
       </div>
+      <Link href="/hot-leads/new" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">New lead</Link>
+    </header>
+
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
+      {[
+        ['Active hot leads', leads.length, '/hot-leads'],
+        ['Follow-ups today', dueToday.length, '/dashboard?followups=today'],
+        ['Overdue follow-ups', overdue.length, '/dashboard?followups=overdue'],
+      ].map(([label, count, href]) => <Link key={label} href={String(href)}
+        className="rounded-lg border border-border bg-card px-3 py-2 hover:border-primary">
+        <span className="block text-xs text-muted-foreground">{label}</span>
+        <span className="text-xl font-semibold tabular-nums">{count}</span>
+      </Link>)}
+    </div>
+
+    <Card className="p-0">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <h2 className="font-semibold">Follow-ups <span className="text-sm font-normal text-muted-foreground">· {tasks.length}</span></h2>
+        <nav aria-label="Follow-up filters" className="flex flex-wrap gap-1">
+          {Object.entries(followUpFilters).map(([id,label]) => <Link key={id} href={'/dashboard?followups=' + id}
+            aria-current={filter === id ? 'page' : undefined}
+            className="rounded px-2 py-1 text-xs text-muted-foreground hover:bg-muted aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground">{label}</Link>)}
+        </nav>
+      </div>
+      {!visible.length && <p className="border-t border-border p-3 text-sm text-muted-foreground">No follow-ups in this queue.</p>}
+      {visible.map(item => <Link key={item.href} href={item.href + '#sales-actions'}
+        className="grid gap-x-3 border-t border-border px-3 py-2 text-sm hover:bg-muted/40 sm:grid-cols-[1fr_auto]">
+        <div className="min-w-0">
+          <p className="truncate font-semibold text-primary">{item.business_name}</p>
+          <p className="truncate text-xs text-muted-foreground" title={item.notes ?? undefined}>
+            {[item.action, item.stage, isAdmin ? names.get(item.assigned_rep_id) : null, item.notes].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div className="text-xs sm:text-right">
+          <p className={overdue.includes(item) ? 'font-medium text-red-800' : 'font-medium'}>{formatPacificFollowUp(item.due)}</p>
+          {item.last_contact_date && <p className="text-muted-foreground">Last contact {item.last_contact_date}</p>}
+        </div>
+      </Link>)}
+      {tasks.length > limit && <Link href={filters.all === '1'
+        ? (isAdmin ? '/admin?metric=followups' : '/performance?metric=followups')
+        : `/dashboard?followups=${filter}&all=1`}
+        className="block border-t border-border px-3 py-2 text-sm text-primary hover:underline">View all follow-ups</Link>}
     </Card>
-    <section className="space-y-3">
-      <h2 className="text-lg font-semibold">Current inventory</h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {queues.map(([label,value,href]) => <MetricCard key={href} label={label} value={value} href={href} />)}
+
+    <section className="space-y-2">
+      <h2 className="font-semibold">Active pipeline</h2>
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        {queues.map(([label,value,href]) => <Link key={href} href={href}
+          className="flex min-h-12 items-center justify-between gap-2 rounded-lg border border-border bg-card px-3 py-2 hover:border-primary">
+          <span className="text-xs font-medium">{label}</span><span className="font-semibold tabular-nums">{value}</span>
+        </Link>)}
       </div>
     </section>
   </div>;

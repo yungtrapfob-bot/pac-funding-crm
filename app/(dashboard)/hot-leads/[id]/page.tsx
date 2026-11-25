@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 
 import { formatPacificDateTime, pacificInputValue } from '@/lib/pacific-time';
 
-export default async function HotLeadDetail({ params: pendingParams, searchParams: pendingSearchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; created?: string }> }) {
+export default async function HotLeadDetail({ params: pendingParams, searchParams: pendingSearchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ saved?: string; created?: string; from?: string }> }) {
   const [params, searchParams] = await Promise.all([pendingParams, pendingSearchParams]);
   const { profile } = await requireUser();
   const supabase = await createClient();
@@ -47,6 +47,8 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
 
   return (
     <div className="space-y-4">
+      <Link href={`/hot-leads${typeof searchParams.from === 'string' ? '?' + new URLSearchParams(searchParams.from).toString() : ''}`}
+        className="inline-block text-sm text-primary hover:underline">Back to hot leads</Link>
       {searchParams?.saved === 'invalid_time' && <p role="alert" className="text-red-800">Choose a valid Pacific follow-up date and time.</p>}
       {(searchParams?.saved === 'timeline_warning' || searchParams?.created === 'timeline_warning') && <p role="alert" className="text-red-800">The lead was saved, but its timeline entry could not be added. Check the timeline before retrying the note.</p>}
       {savedMessage ? <div className="rounded-md border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800">{savedMessage}</div> : null}
@@ -55,6 +57,11 @@ export default async function HotLeadDetail({ params: pendingParams, searchParam
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="text-xl font-semibold">{lead.business_name}</h1>
+            <p className="mt-1 flex flex-wrap gap-x-3 text-sm">
+              <span>{lead.owner_name}</span>
+              {lead.phone && <a className="text-primary hover:underline" href={`tel:${lead.phone}`}>{lead.phone}</a>}
+              {lead.email && <a className="text-primary hover:underline" href={`mailto:${lead.email}`}>{lead.email}</a>}
+            </p>
             <p className="text-sm text-muted-foreground">{lead.sales_review ? 'Conversion needs review' : lead.converted_at ? 'Converted' : lead.archived_at ? 'Archived' : lead.sales_lost ? 'Lost' : leadStages[lead.sales_stage as keyof typeof leadStages]}{lead.sales_test && ' · Test record'}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
