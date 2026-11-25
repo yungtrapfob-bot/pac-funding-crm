@@ -57,3 +57,9 @@ The lockfile pins patched versions of Next.js, React and Zod and resolves Next's
 - The checked-in core schema has no migration for `created_by_user_id`. Core workflows use the existing owner, assignment and activity actor fields.
 
 Run `scripts/qa-crm-rls.sql` as postgres on a disposable migrated database only. It checks database permissions with an administrator and two reps and rolls back its synthetic fixtures. Run `npm run qa:smoke` in an isolated environment with port 3000 free and the expected Supabase environment variables. Use `npm run typecheck`, `npm run lint`, and `npm run build` for application validation. With Node.js 24, run `node --test scripts/qa-pacific-time.test.mjs` to check winter and summer offsets and DST transitions.
+
+## Local validation results
+
+The full migration sequence and SQL authorization regression passed on an isolated Supabase stack. A Chromium run against the production build used one administrator, two rep accounts, and synthetic leads, deals and documents. It passed account provisioning, password reset, deactivation of an existing session, reactivation with a new login, and reassignment with origin attribution intact. It also passed Pacific follow-ups, timeline notes, search, conversion, three document uploads, authorized download, cross-rep denial, processing visibility, rep offer selection, personal commissions, dashboard counts and drill-downs, test-lead deletion and converted-lead archive.
+
+Clean install, lint, type checking, production build, six signed-out route checks, Pacific time tests, and the dependency audit passed. Local public signup was disabled and the browser bundle scan found no service-role variable reference. Production records and configuration were outside the test environment. Production schema and policy drift, Vercel upload limits and live deployment behavior still require staging verification.
