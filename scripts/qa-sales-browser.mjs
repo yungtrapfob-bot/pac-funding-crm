@@ -117,8 +117,11 @@ try {
     assert.ok(await rep.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     await rep.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp',`v1-hot-leads-${width}.png`),fullPage:true});
   }
+  await rep.setViewportSize({width:390,height:844});
+  assert.ok(await rep.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await rep.goto(base+'/dashboard');
   await rep.getByRole('heading',{name:'Active pipeline'}).waitFor();
+  assert.ok(await rep.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
   await rep.getByRole('link',{name:new RegExp(name)}).waitFor();
   for (const [width,height] of [[1280,800],[1440,900],[1920,1080]]) {
     await rep.setViewportSize({width,height});
@@ -252,6 +255,15 @@ try {
     business_name:`Empty deal ${nonce}`,owner_name:'Synthetic',email:'qa@example.test',phone:'5550100199',assigned_rep_id:third.id,
   }).select('id,business_name').single());
   await admin.goto(base+'/deals?q='+nonce);
+  await admin.getByRole('checkbox',{name:'Select '+emptyDeal.business_name,exact:true}).check();
+  await admin.getByLabel('Deal actions').selectOption('reassign');
+  await admin.getByRole('button',{name:'Review selection'}).click();
+  await admin.getByLabel('Assign to').selectOption(another.id);
+  await admin.getByRole('button',{name:'Confirm action',exact:true}).click();
+  await admin.getByText('1 deal reassigned.',{exact:true}).waitFor();
+  const reassigned = must(await service.from('deals').select('assigned_rep_id,owner_profile_id').eq('id',emptyDeal.id).single());
+  assert.equal(reassigned.assigned_rep_id,another.id);
+  assert.equal(reassigned.owner_profile_id,third.id);
   await admin.getByRole('checkbox',{name:'Select '+emptyDeal.business_name,exact:true}).check();
   await admin.getByLabel('Deal actions').selectOption('mark_test');
   await admin.getByRole('button',{name:'Review selection'}).click();
