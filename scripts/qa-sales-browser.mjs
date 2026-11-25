@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { chromium } from 'playwright-core';
 import { createClient } from '@supabase/supabase-js';
 import { join } from 'node:path';
-import { pacificDate } from '../lib/pacific-time.ts';
+import { pacificDate, pacificInputValue } from '../lib/pacific-time.ts';
 
 assert.equal(process.env.QA_SALES_LOCAL_ONLY, 'yes', 'Explicit disposable local QA authorization required');
 const base = 'http://127.0.0.1:3100';
@@ -108,6 +108,7 @@ try {
   await rep.locator('#sales-actions [name=value]').selectOption('application_requested');
   await rep.locator('#sales-actions').getByRole('button',{name:'Save action'}).click();
   await rep.getByText('Application requested',{exact:true}).first().waitFor();
+  await action(rep,'schedule',{due:pacificInputValue(new Date(Date.now() - 3_600_000))});
   await rep.goto(base+'/hot-leads?q='+nonce);
   await rep.getByRole('link',{name,exact:true}).waitFor();
   for (const [width,height] of [[1280,800],[1440,900],[1920,1080]]) {
@@ -118,6 +119,7 @@ try {
   }
   await rep.goto(base+'/dashboard');
   await rep.getByRole('heading',{name:'Active pipeline'}).waitFor();
+  await rep.getByRole('link',{name:new RegExp(name)}).waitFor();
   for (const [width,height] of [[1280,800],[1440,900],[1920,1080]]) {
     await rep.setViewportSize({width,height});
     assert.ok(await rep.getByRole('heading',{name:'Active pipeline'}).evaluate(heading => heading.getBoundingClientRect().bottom <= window.innerHeight));
@@ -189,9 +191,9 @@ try {
   await fill(financial,{funded_date:pacificDate(new Date()),funded_amount:'21000',gross_commission:'1200'});
   await financial.locator('button[type=submit]').click();
   await admin.waitForURL(/saved=workflow/);
-  const pipeline=admin.locator('form').filter({has:admin.locator('[name=current_stage]')});
-  await pipeline.locator('[name=current_stage]').selectOption('Funded');
-  await pipeline.locator('button[type=submit]').click();
+  await admin.getByText('Record funding',{exact:true}).click();
+  await admin.getByLabel(/I verified the funding details/).check();
+  await admin.getByRole('button',{name:'Mark funded',exact:true}).click();
   await admin.waitForURL(/saved=stage/);
   const entries=must(await service.from('commissions').select('rep_id,commission_amount').eq('deal_id',deal));
   assert.equal(entries.find(e=>e.rep_id===opener.id).commission_amount,420);

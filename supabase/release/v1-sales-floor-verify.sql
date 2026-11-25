@@ -69,4 +69,9 @@ select 'New applications require document review', case when exists (
   select from pg_proc where oid=to_regprocedure('public.crm_confirm_application_documents(uuid,integer,text)')
     and prosecdef and prosrc like '%storage.objects%' and prosrc like '%for update%'
 ) then 'PASS' else 'FAIL' end
+union all
+select 'Funding transition is protected', case when exists (
+  select from pg_trigger where tgrelid=to_regclass('public.deals')
+    and tgname='crm_guard_funding_stage' and tgenabled in ('O','A')
+) then 'PASS' else 'FAIL' end
 ) checks order by check_name;

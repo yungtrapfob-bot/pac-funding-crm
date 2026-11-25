@@ -35,6 +35,9 @@ values ('d0000000-0000-4000-8000-000000000001', 'c0000000-0000-4000-8000-0000000
 insert into public.deal_files (deal_id, file_type, path)
 values ('c0000000-0000-4000-8000-000000000001', 'application', 'c0000000-0000-4000-8000-000000000001/qa.pdf');
 insert into storage.objects (bucket_id, name) values ('deal-files', 'c0000000-0000-4000-8000-000000000001/qa.pdf');
+insert into storage.objects (bucket_id,name) values ('deal-files','c0000000-0000-4000-8000-000000000001/statement.pdf');
+insert into public.deal_files (deal_id,file_type,path)
+values ('c0000000-0000-4000-8000-000000000001','statement','c0000000-0000-4000-8000-000000000001/statement.pdf');
 
 set local role authenticated;
 select set_config('request.jwt.claim.sub', 'a0000000-0000-4000-8000-000000000003', true);
@@ -140,7 +143,9 @@ select set_config('request.jwt.claim.sub', 'a0000000-0000-4000-8000-000000000001
 do $$
 begin
   assert public.crm_role() = 'admin', 'Expected Admin';
-  update public.deals set current_stage = 'Funded', gross_commission = 1200
+  perform public.crm_confirm_application_documents('c0000000-0000-4000-8000-000000000001',4);
+  update public.deals set current_stage = 'Funded', gross_commission = 1200,
+    funded_amount=20000,funded_date=(now() at time zone 'America/Los_Angeles')::date
     where id = 'c0000000-0000-4000-8000-000000000001';
   assert found, 'Admin funding update';
   assert (select commission_amount from public.commissions where deal_id = 'c0000000-0000-4000-8000-000000000001') = 600, 'Existing solo commission formula';
@@ -229,6 +234,18 @@ declare
   funded_id constant uuid := 'c0000000-0000-4000-8000-000000000012';
   ledger_amount numeric;
 begin
+  begin
+    perform public.crm_set_sales_deal_stage(empty_id,'Funded');
+    raise exception 'Unexpected funding without verified data';
+  exception when raise_exception then
+    assert sqlerrm like 'Save the actual funding date%';
+  end;
+  begin
+    perform public.crm_set_sales_deal_stage(funded_id,'In Underwriting');
+    raise exception 'Unexpected funded deal reversal';
+  exception when raise_exception then
+    assert sqlerrm like 'A funded stage cannot be reversed%';
+  end;
   select sum(commission_amount) into ledger_amount from public.commissions where deal_id=funded_id;
   assert ledger_amount=500, 'Existing solo ledger';
   assert (select reason from public.crm_deal_cleanup_eligibility(array[funded_id],'delete')) like 'Funding or commission%';

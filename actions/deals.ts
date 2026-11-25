@@ -545,10 +545,11 @@ export async function updateDealStage(formData: FormData) {
   const p = Object.fromEntries(formData);
   const dealId = String(p.deal_id);
   const nextStage = dealStageSchema.parse(String(p.current_stage));
+  if (nextStage === 'Funded' && p.confirm_funding !== 'yes') redirect(`/deals/${dealId}?saved=funding_error#stage-controls`);
   const { error } = await supabase.rpc("crm_set_sales_deal_stage", {
     record_id: dealId, stage_label: nextStage,
   });
-  if (error) redirect(`/deals/${dealId}?saved=stage_error#sales-actions`);
+  if (error) redirect(`/deals/${dealId}?saved=${nextStage === 'Funded' ? 'funding_error#stage-controls' : 'stage_error#stage-controls'}`);
   revalidatePath(`/deals/${dealId}`);
   revalidatePath("/admin/pipeline");
   revalidatePath("/deals");

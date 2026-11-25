@@ -1,3 +1,4 @@
+import { DealStageControls } from '@/components/deals/deal-stage-controls';
 import { ApplicationDocumentReview, UploadDocumentsButton } from '@/components/deals/application-document-review';
 import { SalesActions } from '@/components/sales/sales-actions';
 import { SalesTimeline } from '@/components/sales/timeline';
@@ -10,7 +11,6 @@ import {
   addDealDocuments,
   selectOffer,
   updateDealDetails,
-  updateDealStage,
 } from "@/actions/deals";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,7 +20,6 @@ import { requireUser } from "@/lib/auth";
 import {
   addBusinessDays,
   calculateFiftyPercentPaidDate,
-  PIPELINE_STAGES,
   toUiPipelineStage,
 } from "@/lib/utils";
 import Link from "next/link";
@@ -255,26 +254,14 @@ export default async function DealDetailPage({
         </Card>
       </div>
 
-      {isAdmin ? (
-        <Card>
-          <h2 className="mb-2 text-lg font-medium">Stage Movement</h2>
-          <form action={updateDealStage} className="flex gap-2">
-            <input type="hidden" name="deal_id" value={deal.id} />
-            <select
-              name="current_stage"
-              defaultValue={toUiPipelineStage(deal.current_stage)}
-              className="rounded-md border px-3 py-2 text-sm"
-            >
-              {PIPELINE_STAGES.filter(stage => stage !== 'KIF').map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-            <Button type="submit">Move Stage</Button>
-          </form>
+      {isAdmin && !deal.archived_at && !['funded','lost'].includes(queueStage) && (
+        <Card id="stage-controls">
+          <h2 className="mb-2 text-lg font-medium">Stage movement</h2>
+          {searchParams?.saved === 'stage_error' && <p role="alert" className="mb-2 text-sm text-red-800">Could not change the deal stage. Check its current status.</p>}
+          {searchParams?.saved === 'funding_error' && <p role="alert" className="mb-2 text-sm text-red-800">Could not record funding. Check the saved funding date, amount, gross commission, and document review.</p>}
+          <DealStageControls id={deal.id} stage={toUiPipelineStage(deal.current_stage)} />
         </Card>
-      ) : null}
+      )}
 
       <Card>
         <h2 className="mb-2 text-lg font-medium">
@@ -512,7 +499,6 @@ export default async function DealDetailPage({
 
       <Card id="sales-actions">
         <h2 className="mb-2 text-lg font-medium">Next action</h2>
-        {searchParams?.saved === 'stage_error' && <p role="alert" className="text-sm text-red-800">Could not change the pipeline stage. Use Mark lost or Reopen when applicable.</p>}
         {deal.sales_follow_up_at && <p className="mb-2 text-sm">{deal.sales_next_action} · {formatPacificDateTime(deal.sales_follow_up_at)} (Pacific)</p>}
         {deal.converted_from_hot_lead_id && <Link className="mb-2 block text-primary underline" href={`/hot-leads/${deal.converted_from_hot_lead_id}`}>Originating lead and activity</Link>}
         <SalesActions entity="deal" id={deal.id} admin={isAdmin} lost={queueStage === 'lost'} closed={Boolean(deal.archived_at) || queueStage === 'funded'}
