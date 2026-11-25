@@ -39,6 +39,14 @@ export type BulkResult = SalesResult & {
 };
 
 export async function manageSalesLeads(_: BulkResult, form: FormData): Promise<BulkResult> {
+  return manageSalesRecords(form, 'lead');
+}
+
+export async function manageSalesDeals(_: BulkResult, form: FormData): Promise<BulkResult> {
+  return manageSalesRecords(form, 'deal');
+}
+
+async function manageSalesRecords(form: FormData, entity: 'lead' | 'deal'): Promise<BulkResult> {
   await requireRole(['admin']);
   const parsed = z.object({
     ids: z.array(z.guid()).min(1).max(100),
@@ -49,21 +57,25 @@ export async function manageSalesLeads(_: BulkResult, form: FormData): Promise<B
     ids: form.getAll('lead_ids'), operation: form.get('operation'),
     mode: form.get('mode'), target: form.get('target') || undefined,
   });
-  if (!parsed.success) return { status: 'error', message: 'Choose leads and an action.' };
+  if (!parsed.success || (entity === 'deal' && parsed.data.operation === 'reassign')) {
+    return { status: 'error', message: `Choose ${entity}s and an action.` };
+  }
   const { ids, operation, mode, target } = parsed.data;
   const supabase = await createClient();
-  const lead_ids = [...new Set(ids.map(id => id.toLowerCase()))];
+  const recordIds = [...new Set(ids.map(id => id.toLowerCase()))];
   if (mode === 'preview') {
-    const { data, error } = await supabase.rpc('crm_sales_lead_eligibility', { lead_ids, operation });
-    if (error) return { status: 'error', message: 'Could not check the selected leads.' };
+    const { data, error } = entity === 'lead'
+      ? await supabase.rpc('crm_sales_lead_eligibility', { lead_ids: recordIds, operation })
+      : await supabase.rpc('crm_deal_cleanup_eligibility', { deal_ids: recordIds, operation });
+    if (error) return { status: 'error', message: `Could not check the selected ${entity}s.` };
     return { status: 'idle', preview: { operation, rows: data } };
   }
   if (operation === 'reassign' && !target) return { status: 'error', message: 'Choose an active sales rep.' };
-  const { data, error } = await supabase.rpc('crm_sales_manage_leads', {
-    lead_ids, operation, target_rep: target ?? null,
-  });
-  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : 'The action could not be completed. No selected leads were changed.' };
-  for (const path of ['/dashboard', '/hot-leads', '/admin', '/performance']) revalidatePath(path);
+  const { data, error } = entity === 'lead'
+    ? await supabase.rpc('crm_sales_manage_leads', { lead_ids: recordIds, operation, target_rep: target ?? null })
+    : await supabase.rpc('crm_manage_deal_cleanup', { deal_ids: recordIds, operation });
+  if (error) return { status: 'error', message: error.code === 'P0001' ? error.message : `The action could not be completed. No selected ${entity}s were changed.` };
+  for (const path of ['/dashboard', '/hot-leads', '/deals', '/admin', '/admin/pipeline', '/admin/processing', '/performance']) revalidatePath(path);
   const verb = { archive: 'archived', delete: 'deleted', restore: 'restored', reassign: 'reassigned' }[operation];
-  return { status: 'success', message: `${data} ${data === 1 ? 'lead' : 'leads'} ${verb}.` };
+  return { status: 'success', message: `${data} ${entity}${data === 1 ? '' : 's'} ${verb}.` };
 }

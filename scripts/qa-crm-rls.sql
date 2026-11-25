@@ -203,4 +203,46 @@ begin
   assert public.crm_role() = 'rep', 'Reactivated rep can create a new session';
 end $$;
 
+-- Cleanup uses locked eligibility and preserves financial history.
+reset role;
+insert into public.deals (id,business_name,owner_name,phone,email,assigned_rep_id) values
+  ('c0000000-0000-4000-8000-000000000011','QA empty deal','Synthetic','5550100','qa@example.test','a0000000-0000-4000-8000-000000000002'),
+  ('c0000000-0000-4000-8000-000000000012','QA funded deal','Synthetic','5550100','qa@example.test','a0000000-0000-4000-8000-000000000002');
+update public.deals set current_stage='Funded', funded_amount=20000,gross_commission=1000
+  where id='c0000000-0000-4000-8000-000000000012';
+set local role authenticated;
+select set_config('request.jwt.claims', '{}', true);
+select set_config('request.jwt.claim.sub', 'a0000000-0000-4000-8000-000000000002', true);
+do $$
+begin
+  begin
+    perform public.crm_manage_deal_cleanup(array['c0000000-0000-4000-8000-000000000011'::uuid],'delete');
+    raise exception 'Unexpected rep deal delete';
+  exception when raise_exception then
+    assert sqlerrm='Admin access required.';
+  end;
+end $$;
+select set_config('request.jwt.claim.sub', 'a0000000-0000-4000-8000-000000000001', true);
+do $$
+declare
+  empty_id constant uuid := 'c0000000-0000-4000-8000-000000000011';
+  funded_id constant uuid := 'c0000000-0000-4000-8000-000000000012';
+  ledger_amount numeric;
+begin
+  select sum(commission_amount) into ledger_amount from public.commissions where deal_id=funded_id;
+  assert ledger_amount=500, 'Existing solo ledger';
+  assert (select reason from public.crm_deal_cleanup_eligibility(array[funded_id],'delete')) like 'Funding or commission%';
+  begin
+    perform public.crm_manage_deal_cleanup(array[empty_id,funded_id],'delete');
+    raise exception 'Unexpected mixed deal delete';
+  exception when raise_exception then
+    assert sqlerrm='The selection changed or contains protected deals. Review it again.';
+  end;
+  assert public.crm_manage_deal_cleanup(array[empty_id],'delete')=1;
+  assert public.crm_manage_deal_cleanup(array[funded_id],'archive')=1;
+  assert (select archived_at from public.crm_sales_deal_queue where id=funded_id) is not null;
+  assert (select sum(commission_amount) from public.commissions where deal_id=funded_id)=ledger_amount;
+  assert public.crm_manage_deal_cleanup(array[funded_id],'restore')=1;
+end $$;
+
 rollback;

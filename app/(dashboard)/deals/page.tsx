@@ -19,7 +19,7 @@ const STAGE_FILTERS: Record<string, string[]> = {
   all_apps: []
 };
 
-export default async function DealsPage({ searchParams: pendingSearchParams }: { searchParams: Promise<{ q?: string; stage?: string; rep?: string; queue?: string; group?: string }> }) {
+export default async function DealsPage({ searchParams: pendingSearchParams }: { searchParams: Promise<{ q?: string; stage?: string; rep?: string; queue?: string; group?: string; archived?: string; test?: string }> }) {
   const searchParams = await pendingSearchParams;
   const { profile } = await requireUser();
   const q = searchParams.q?.toLowerCase().trim() ?? '';
@@ -29,12 +29,15 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
   const { data: reps } = profile.role === 'admin'
     ? await supabase.from('profiles').select('id,full_name').in('role', ['admin', 'rep']).order('full_name', { ascending: true })
     : { data: [] };
+  const isAdmin = profile.role === 'admin';
+  const archived = isAdmin && searchParams.archived === '1';
+  const includeTest = isAdmin && searchParams.test === 'include';
   const queue = searchParams.queue ?? '';
   const group = searchParams.group ?? '';
   const queueGroup = Object.hasOwn(dealQueueGroups, group) ? dealQueueGroups[group] : null;
   const filterQueue = Object.hasOwn(dealStages, queue);
   const [initialDeals, queueRows] = await Promise.all([
-    getDeals(profile.role, profile.id, rep || undefined),
+    getDeals(profile.role, profile.id, rep || undefined, archived),
     readPages((from,to) => {
       const query = supabase.from('crm_sales_deal_queue').select('id,queue_stage').order('id');
       if (filterQueue) query.eq('queue_stage',queue).eq('sales_test',false);
@@ -43,7 +46,7 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
     }),
   ]);
   const operationalStages = new Map(queueRows.map(row => [row.id, row.queue_stage]));
-  let deals = initialDeals.map(deal => ({...deal, operational_stage: operationalStages.get(deal.id)}));
+  let deals = initialDeals.filter(deal => includeTest || !deal.sales_test).map(deal => ({...deal, operational_stage: operationalStages.get(deal.id)}));
   if (filterQueue || queueGroup) deals = deals.filter(deal => operationalStages.has(deal.id));
   if (q) deals = deals.filter((d) => [d.business_name, d.owner_name, d.email].some((v) => String(v ?? '').toLowerCase().includes(q)));
   if (stage) {
@@ -55,8 +58,11 @@ export default async function DealsPage({ searchParams: pendingSearchParams }: {
   }
 
   return <div className="space-y-4"><div className="flex items-center justify-between"><h1 className="text-2xl font-semibold">{queueGroup && !filterQueue ? queueGroup.label : 'Deals'}</h1><Link href="/deals/new" className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">Submit Deal</Link></div>
-  <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm"><form className="grid grid-cols-1 gap-2 md:grid-cols-5"><Input name="q" defaultValue={q} placeholder="Search business, owner, email"/><select name="queue" aria-label="Operational stage" defaultValue={queue} className="rounded border border-border p-2"><option value="">All operational stages</option>{Object.entries(dealStages).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>
+  <Card className="rounded-xl border-border/80 bg-card/95 p-4 shadow-sm"><form className="grid grid-cols-1 gap-2 md:grid-cols-5">{archived && <input type="hidden" name="archived" value="1" />}
+    {isAdmin && <label className="self-center text-sm"><input type="checkbox" name="test" value="include" defaultChecked={includeTest} /> Include test deals</label>}
+    <Input name="q" defaultValue={q} placeholder="Search business, owner, email"/><select name="queue" aria-label="Operational stage" defaultValue={queue} className="rounded border border-border p-2"><option value="">All operational stages</option>{Object.entries(dealStages).map(([key,label]) => <option key={key} value={key}>{label}</option>)}</select>
     {profile.role === 'admin' ? <select name="rep" defaultValue={rep} className="rounded-md border border-border bg-transparent px-3 py-2 text-sm"><option value="">All reps</option>{(reps ?? []).map((internalRep) => <option key={internalRep.id} value={internalRep.id}>{internalRep.full_name ?? internalRep.id}</option>)}</select> : null}
     <button className="rounded-md border border-border px-3 py-2 text-sm">Filter</button></form></Card>
-  <DealsTable deals={deals} /></div>;
+  {isAdmin && <Link href={archived ? '/deals' : '/deals?archived=1'} className="inline-block text-sm text-primary hover:underline">{archived ? 'Back to current deals' : 'View archived deals'}</Link>}
+  <DealsTable deals={deals} canManage={isAdmin} /></div>;
 }

@@ -16,6 +16,7 @@ export type SalesLead = {
 };
 
 export type SalesDeal = {
+  archived_at?: string | null;
   id: string; business_name: string; assigned_rep_id: string | null; owner_profile_id: string | null; closer_rep_id: string | null;
   sales_processor_id: string | null; sales_stage: string | null; sales_source: string | null; current_stage: string; queue_stage: string; sales_test: boolean; sales_lost: boolean;
   converted_from_hot_lead_id: string | null; submitted_at: string; sales_follow_up_at: string | null; sales_next_action: string | null;
@@ -169,7 +170,7 @@ export function stageEntered(row: SalesOpportunity) {
 }
 
 export function needsHighValueReview(row: SalesOpportunity, now: number) {
-  if (!row.deal || ['funded', 'lost'].includes(row.deal.queue_stage) || !(Number(row.deal.requested_amount) >= highValueRequest)) return false;
+  if (!row.deal || row.deal.archived_at || ['funded', 'lost'].includes(row.deal.queue_stage) || !(Number(row.deal.requested_amount) >= highValueRequest)) return false;
   const activity = lastDealActivity(row);
   return Boolean(activity && now - Date.parse(activity) > salesAttentionDays * DAY);
 }

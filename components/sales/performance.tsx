@@ -12,7 +12,7 @@ const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD
 const wholeDollars = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 const percent = (rate: number | null) => rate === null ? 'N/A' : (rate * 100).toFixed(1) + '%';
 const isActiveLead = (r: SalesOpportunity) => r.lead && !r.lead.archived_at && !r.lead.converted_at && !r.lead.sales_lost && !r.lead.sales_review;
-const isOpenDeal = (r: SalesOpportunity) => r.deal && !['funded','lost'].includes(r.deal.queue_stage);
+const isOpenDeal = (r: SalesOpportunity) => r.deal && !r.deal.archived_at && !['funded','lost'].includes(r.deal.queue_stage);
 const followup = (r: SalesOpportunity) => isOpenDeal(r) ? r.deal?.sales_follow_up_at : isActiveLead(r) ? r.lead?.next_follow_up_date : null;
 const fields = 'rounded border border-border bg-card px-2 py-1.5';
 

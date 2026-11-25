@@ -1,24 +1,42 @@
-import { updateDealStage } from '@/actions/deals';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import Link from 'next/link';
 import { requireRole } from '@/lib/auth';
-import { PIPELINE_STAGES, toUiPipelineStage } from '@/lib/utils';
+import { dealStages } from '@/lib/sales-labels';
 import { createClient } from '@/lib/supabase/server';
+import { readPages } from '@/lib/supabase/read-pages';
 
 export default async function AdminPipelinePage() {
   await requireRole(['admin']);
   const supabase = await createClient();
-  const { data: deals } = await supabase
-    .from('deals')
-    .select('id,business_name,owner_name,current_stage,sales_lost,assigned_rep:assigned_rep_id(full_name)')
-    .order('submitted_at', { ascending: false });
+  const deals = await readPages((from, to) => supabase.from('crm_sales_deal_queue')
+    .select('id,business_name,queue_stage,has_documents,sales_stage')
+    .is('archived_at', null).eq('sales_test', false)
+    .order('submitted_at', { ascending: false }).order('id').range(from, to));
+  const groups = Object.entries(dealStages).map(([stage, label]) => ({
+    stage, label, deals: deals.filter(deal => deal.queue_stage === stage),
+  })).filter(group => group.deals.length);
 
-  const getProfileName = (relation: { full_name: string | null } | { full_name: string | null }[] | null | undefined) => {
-    if (!relation) return null;
-    if (Array.isArray(relation)) return relation[0]?.full_name ?? null;
-    return relation.full_name ?? null;
-  };
-
-  const grouped = PIPELINE_STAGES.map((stage) => ({ stage, items: (deals ?? []).filter((d) => (d.sales_lost ? 'KIF' : toUiPipelineStage(d.current_stage)) === stage) }));
-  return <div className="space-y-4"><h1 className="text-2xl font-semibold">Admin Pipeline</h1><div className="grid grid-cols-1 gap-4 xl:grid-cols-2">{grouped.map((group) => <Card key={group.stage} className="rounded-xl border-border/80 shadow-sm"><h2 className="mb-3 font-medium">{group.stage} <span className="text-muted-foreground">({group.items.length})</span></h2>{!group.items.length ? <p className="text-sm text-muted-foreground">No deals in this stage.</p> : <div className="space-y-2">{group.items.map((deal) => <form key={deal.id} action={updateDealStage} className="flex items-center justify-between gap-2 rounded-md border border-border/80 bg-background/70 p-3 text-sm"><input type="hidden" name="deal_id" value={deal.id}/><div><p className="font-medium">{deal.business_name}</p><p className="text-muted-foreground">{deal.owner_name}</p><p className="text-xs font-medium text-foreground/80">Assigned Rep: {getProfileName(deal.assigned_rep) ?? 'Unassigned'}</p></div><select name="current_stage" defaultValue={group.stage} className="rounded-md border border-border bg-transparent px-2 py-1 text-xs">{PIPELINE_STAGES.map((stage) => <option key={stage} value={stage}>{stage}</option>)}</select><Button type="submit">Save</Button></form>)}</div>}</Card>)}</div></div>;
+  return <div className="space-y-4">
+    <header className="flex flex-wrap items-center justify-between gap-3">
+      <h1 className="text-2xl font-semibold">Admin Pipeline</h1>
+      <Link href="/deals" className="text-sm text-primary hover:underline">Manage deals</Link>
+    </header>
+    {!groups.length && <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">No deals in the pipeline.</p>}
+    {groups.map(group => <section key={group.stage} className="overflow-hidden rounded-lg border border-border bg-card">
+      <h2 className="bg-muted/40 px-3 py-2 text-sm font-semibold">
+        <Link href={`/deals?queue=${group.stage}`} className="hover:underline">{group.label}</Link>
+        <span className="ml-2 font-normal text-muted-foreground">{group.deals.length}</span>
+      </h2>
+      <ul className="divide-y divide-border">
+        {group.deals.map(deal => <li key={deal.id}>
+          <Link href={`/deals/${deal.id}`} className="flex flex-wrap items-center justify-between gap-x-4 px-3 py-2 text-sm hover:bg-muted/40">
+            <span className="font-medium text-primary">{deal.business_name}</span>
+            <span className="text-xs text-muted-foreground">
+              {deal.has_documents ? 'Application and statements on file' : 'Documents incomplete'}
+              {!deal.sales_stage && ' · Stage inferred from existing records'}
+            </span>
+          </Link>
+        </li>)}
+      </ul>
+    </section>)}
+  </div>;
 }

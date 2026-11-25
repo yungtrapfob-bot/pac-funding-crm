@@ -22,7 +22,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .is('archived_at',null).is('converted_at',null).eq('sales_lost',false).eq('sales_review',false).eq('sales_test',false)
       .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
     readPages((from,to) => supabase.from('crm_sales_deal_queue').select('id,business_name,queue_stage,sales_follow_up_at,sales_next_action,assigned_rep_id')
-      .not('queue_stage','in','(funded,lost)').eq('sales_test',false)
+      .not('queue_stage','in','(funded,lost)').is('archived_at',null).eq('sales_test',false)
       .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
   ]);
   const queues = [
