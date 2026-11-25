@@ -6,7 +6,7 @@ import { manageSalesLeads } from '@/actions/sales';
 
 type Lead = { id: string; name: string };
 const Selection = createContext<{ ids: string[]; toggle: (id: string) => void } | null>(null);
-const operations = { archive: 'Archive', delete: 'Delete test leads', restore: 'Restore', reassign: 'Reassign' };
+const operations = { archive: 'Archive', delete: 'Delete permanently', restore: 'Restore', reassign: 'Reassign' };
 
 export function LeadCheckbox({ lead }: { lead: Lead }) {
   const selection = useContext(Selection);
@@ -48,6 +48,13 @@ export function LeadSelection({ leads, children, reps }: { leads: Lead[]; childr
           </select>
         </label>
         <span>{selected.length} selected</span>
+        <button type="button" disabled={pending || !leads.length || selected.length === Math.min(leads.length, 100)}
+          onClick={() => setIds(leads.slice(0, 100).map(lead => lead.id))}
+          className="rounded border border-border px-2 py-1 disabled:opacity-50">
+          {leads.length > 100 ? 'Select first 100 visible' : 'Select all visible'}
+        </button>
+        <button type="button" disabled={pending || !selected.length} onClick={() => setIds([])}
+          className="rounded border border-border px-2 py-1 disabled:opacity-50">Clear selection</button>
         <input type="hidden" name="mode" value="preview" />
         {selected.map(lead => <input key={lead.id} type="hidden" name="lead_ids" value={lead.id} />)}
         <button type="submit" disabled={pending || !operation || !selected.length} className="rounded border border-border px-2 py-1 disabled:opacity-50">Review selection</button>
@@ -58,7 +65,8 @@ export function LeadSelection({ leads, children, reps }: { leads: Lead[]; childr
           <ul className="list-disc pl-5">{blocked.map(row => <li key={row.id}>{row.business_name} · {row.reason}</li>)}</ul></>}
         {!!eligible.length && <form action={dispatch} className="space-y-2">
           <p className="font-medium">{operations[operation as keyof typeof operations]} {eligible.length} eligible {eligible.length === 1 ? 'lead' : 'leads'}?</p>
-          <ul className="list-disc pl-5">{eligible.map(row => <li key={row.id}>{row.business_name} <span className="text-xs text-muted-foreground">{row.id}</span>
+          {operation === 'delete' && <p className="text-red-800">This permanently removes the listed leads and their lead-only activity.</p>}
+          <ul className="list-disc pl-5">{eligible.map(row => <li key={row.id}>{row.business_name}
             <input type="hidden" name="lead_ids" value={row.id} /></li>)}</ul>
           <input type="hidden" name="operation" value={operation} />
           <input type="hidden" name="mode" value="apply" />

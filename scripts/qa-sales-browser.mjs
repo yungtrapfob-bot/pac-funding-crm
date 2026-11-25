@@ -180,7 +180,7 @@ try {
   for (let i=0;i<3;i++) {
     const id = i===0 ? randomUUID().replace(/^(........-....-).(...-)./,(_,a,b)=>a+'0'+b+'0') : randomUUID();
     const business_name=`Cleanup QA ${nonce} ${i}`;
-    must(await service.from('hot_leads').insert({id,business_name,owner_name:'Synthetic',email:'qa@example.test',phone:'5550100199',assigned_rep_id:third.id,sales_test:true}));
+    must(await service.from('hot_leads').insert({id,business_name,owner_name:'Synthetic',email:'qa@example.test',phone:'5550100199',assigned_rep_id:third.id}));
     fixtures.push({id,business_name});
   }
   await admin.goto(base+'/hot-leads?view=active&test=include&q='+nonce);

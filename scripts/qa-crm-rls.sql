@@ -15,9 +15,6 @@ insert into public.hot_leads (id, business_name, owner_name, phone, email, assig
   ('b0000000-0000-4000-8000-000000000001', 'QA converted', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000002'),
   ('b0000000-0000-4000-8000-000000000002', 'QA temporary A', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000002'),
   ('b0000000-0000-4000-8000-000000000003', 'QA temporary B', 'Synthetic', '5550100', 'qa@example.test', 'a0000000-0000-4000-8000-000000000003');
-update public.hot_leads set sales_test = true where id in (
-  'b0000000-0000-4000-8000-000000000002', 'b0000000-0000-4000-8000-000000000003'
-);
 insert into public.activities (hot_lead_id, actor_id, activity_type) values
   ('b0000000-0000-4000-8000-000000000001', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity'),
   ('b0000000-0000-4000-8000-000000000002', 'a0000000-0000-4000-8000-000000000002', 'hot_lead_activity');
