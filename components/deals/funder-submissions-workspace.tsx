@@ -58,7 +58,8 @@ export function FunderSubmissionsWorkspace({ dealId, previews, routingResults, d
       </div>
     </header>
     <p className="text-sm text-muted-foreground">{readOnly ? 'This deal is closed to new submissions.' : mode === 'test'
-      ? 'Controlled mock email is available for test deals.' : mode === 'resend' ? 'Live email requires authorization for each reviewed package.'
+      ? 'Controlled mock email is available for test deals.' : mode === 'resend-pilot' ? 'Pilot email is limited to synthetic deals and the configured test inbox.'
+      : mode === 'resend' ? 'Live email requires authorization for each reviewed package.'
         : 'Email delivery is disabled. Verified portals can be recorded manually.'}</p>
     {!!notice.length && <ul role="status" className="rounded border border-border bg-muted/40 p-2 text-sm">{notice.map(message => <li key={message}>{message}</li>)}</ul>}
     <div className="max-h-[28rem] overflow-auto rounded border border-border">

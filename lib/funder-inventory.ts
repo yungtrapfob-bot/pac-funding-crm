@@ -35,7 +35,8 @@ export async function readFunderInventory(supabase: Awaited<ReturnType<typeof cr
       key,
       configurationAmbiguous: ambiguous,
       submission_method: normalizeSubmissionMethod(config?.submission_method ?? row.submission_method),
-      is_active: config?.is_active ?? row.is_active !== false,
+      masterActive: row.is_active !== false,
+      is_active: row.is_active !== false && config?.is_active !== false,
       verified_at: config?.verified_at ?? null,
       portal_url: config?.portal_url ?? null,
     };

@@ -5,6 +5,8 @@ type InputDocument = { type: string; bytes: ArrayBuffer };
 
 export function analysisMode() {
   if (process.env.PROCESSING_ANALYSIS_PROVIDER === 'mock') return 'mock';
+  if (process.env.PROCESSING_ANALYSIS_PROVIDER === 'openai-pilot' && process.env.VERCEL_ENV === 'preview'
+    && process.env.OPENAI_API_KEY && process.env.PROCESSING_ANALYSIS_MODEL) return 'openai-pilot';
   if (process.env.PROCESSING_ANALYSIS_PROVIDER === 'openai' && process.env.PROCESSING_ANALYSIS_EXTERNAL_APPROVED === 'true'
     && process.env.OPENAI_API_KEY && process.env.PROCESSING_ANALYSIS_MODEL) return 'openai';
   return 'disabled';
@@ -14,7 +16,7 @@ export interface DocumentAnalysisProvider {
   extract(documents: InputDocument[]): Promise<unknown>;
 }
 
-export function getDocumentAnalysisProvider(mode: 'mock' | 'openai'): DocumentAnalysisProvider {
+export function getDocumentAnalysisProvider(mode: 'mock' | 'openai' | 'openai-pilot'): DocumentAnalysisProvider {
   if (mode === 'mock') return {
     async extract(documents) {
       if (documents.some(doc => new TextDecoder().decode(doc.bytes) !== '%PDF-1.4 synthetic QA fixture')) {

@@ -1,12 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState, type ReactNode } from 'react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { evaluateFunders, submissionMethodLabel, type FunderMasterRecord, type RoutingFit, type SubmissionMethod } from '@/lib/funder-routing';
 
-type Funder = FunderMasterRecord;
+type Funder = FunderMasterRecord & { id: string };
 
 type DealInputState = {
   industry: string;
@@ -15,6 +16,7 @@ type DealInputState = {
   monthlyRevenue: string;
   timeInBusinessMonths: string;
   nsfCount: string;
+  negativeDays: string;
   requestedAmount: string;
   depositsPerMonth: string;
   fico: string;
@@ -27,6 +29,7 @@ export const DEFAULT_DEAL_INPUTS: DealInputState = {
   monthlyRevenue: '189000',
   timeInBusinessMonths: '36',
   nsfCount: '0',
+  negativeDays: '',
   requestedAmount: '',
   depositsPerMonth: '2',
   fico: '800'
@@ -78,10 +81,9 @@ function inputLabel(label: string, children: ReactNode) {
   );
 }
 
-export function FunderMasterTable({ funders, initialSearch = '', initialDealInputs = DEFAULT_DEAL_INPUTS, dealContextLabel }: { funders: Funder[]; initialSearch?: string; initialDealInputs?: DealInputState; dealContextLabel?: string }) {
+export function FunderMasterTable({ funders, initialSearch = '', initialDealInputs = DEFAULT_DEAL_INPUTS, dealContextLabel, dealId }: { funders: Funder[]; initialSearch?: string; initialDealInputs?: DealInputState; dealContextLabel?: string; dealId?: string }) {
   const [dealInputs, setDealInputs] = useState(initialDealInputs);
-  const [targetFunders, setTargetFunders] = useState<string[]>([]);
-  const [queuedFunders, setQueuedFunders] = useState<string[]>([]);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [search, setSearch] = useState(initialSearch);
   const [fitFilter, setFitFilter] = useState<'all' | RoutingFit>('all');
   const [submissionFilter, setSubmissionFilter] = useState<'all' | SubmissionMethod>('all');
@@ -93,18 +95,19 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
     monthlyRevenue: parseNullableNumber(dealInputs.monthlyRevenue),
     timeInBusinessMonths: parseNullableNumber(dealInputs.timeInBusinessMonths),
     nsfCount: parseNullableNumber(dealInputs.nsfCount),
+    negativeDays: parseNullableNumber(dealInputs.negativeDays),
     requestedAmount: parseNullableNumber(dealInputs.requestedAmount),
     depositsPerMonth: parseNullableNumber(dealInputs.depositsPerMonth),
     fico: parseNullableNumber(dealInputs.fico)
   }), [dealInputs]);
 
   const results = useMemo(() => evaluateFunders(funders, routingDeal), [funders, routingDeal]);
-  const funderByName = useMemo(() => new Map(funders.map((funder) => [funder.funder_name, funder])), [funders]);
+  const funderById = useMemo(() => new Map(funders.map(funder => [funder.id, funder])), [funders]);
 
   const filteredResults = useMemo(() => {
     const query = search.trim().toLowerCase();
     return results.filter((result) => {
-      const funder = funderByName.get(result.funderName);
+      const funder = funderById.get(result.funderId ?? '');
       const searchable = [
         result.funderName,
         result.fit,
@@ -122,7 +125,7 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
       const matchesSubmission = submissionFilter === 'all' || result.submissionMethod === submissionFilter;
       return matchesSearch && matchesFit && matchesSubmission;
     });
-  }, [fitFilter, funderByName, results, search, submissionFilter]);
+  }, [fitFilter, funderById, results, search, submissionFilter]);
 
   const counts = useMemo(() => ({
     YES: results.filter((result) => result.fit === 'YES').length,
@@ -131,9 +134,6 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
   }), [results]);
 
   const updateInput = (key: keyof DealInputState, value: string) => setDealInputs((current) => ({ ...current, [key]: value }));
-  const toggleTarget = (funderName: string) => setTargetFunders((current) => current.includes(funderName) ? current.filter((name) => name !== funderName) : [...current, funderName]);
-  const toggleQueued = (funderName: string) => setQueuedFunders((current) => current.includes(funderName) ? current.filter((name) => name !== funderName) : [...current, funderName]);
-
   return (
     <div className="space-y-4">
       <Card className="p-4">
@@ -143,7 +143,7 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
             <p className="text-sm text-muted-foreground">{dealContextLabel ? `Auto-filled from ${dealContextLabel}. Adjust any field before routing.` : 'Enter the deal once; routing updates funder-by-funder below.'}</p>
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
-            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800">YES {counts.YES}</Badge>
+            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-800">GO {counts.YES}</Badge>
             <Badge className="border-amber-200 bg-amber-50 text-amber-800">MAYBE {counts.MAYBE}</Badge>
             <Badge className="border-red-200 bg-red-50 text-red-800">NO {counts.NO}</Badge>
           </div>
@@ -160,7 +160,8 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
           ))}
           {inputLabel('Monthly Revenue', <Input inputMode="numeric" value={dealInputs.monthlyRevenue} onChange={(e) => updateInput('monthlyRevenue', e.target.value)} placeholder="75000" />)}
           {inputLabel('Time in Business (months)', <Input inputMode="numeric" value={dealInputs.timeInBusinessMonths} onChange={(e) => updateInput('timeInBusinessMonths', e.target.value)} placeholder="18" />)}
-          {inputLabel('Neg Days / NSFs (monthly)', <Input inputMode="numeric" value={dealInputs.nsfCount} onChange={(e) => updateInput('nsfCount', e.target.value)} placeholder="4" />)}
+          {inputLabel('NSFs (monthly)', <Input inputMode="numeric" value={dealInputs.nsfCount} onChange={(e) => updateInput('nsfCount', e.target.value)} placeholder="4" />)}
+          {inputLabel('Negative days (monthly)', <Input inputMode="numeric" value={dealInputs.negativeDays} onChange={(e) => updateInput('negativeDays', e.target.value)} />)}
           {inputLabel('Funding Amount Requested', <Input inputMode="numeric" value={dealInputs.requestedAmount} onChange={(e) => updateInput('requestedAmount', e.target.value)} placeholder="60000" />)}
           {inputLabel('Deposits / Month', <Input inputMode="numeric" value={dealInputs.depositsPerMonth} onChange={(e) => updateInput('depositsPerMonth', e.target.value)} placeholder="5" />)}
           {inputLabel('Credit Score (FICO)', <Input inputMode="numeric" value={dealInputs.fico} onChange={(e) => updateInput('fico', e.target.value)} placeholder="650" />)}
@@ -177,9 +178,9 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search funder, reason, states, positions, industry..." />
           <select className="h-10 rounded-md border bg-background px-3 text-sm" value={fitFilter} onChange={(e) => setFitFilter(e.target.value as 'all' | RoutingFit)}>
             <option value="all">All fits</option>
-            <option value="YES">YES fits</option>
+            <option value="YES">GO fits</option>
             <option value="MAYBE">MAYBE / review</option>
-            <option value="NO">NO / dead</option>
+            <option value="NO">NO fits</option>
           </select>
           <select className="h-10 rounded-md border bg-background px-3 text-sm" value={submissionFilter} onChange={(e) => setSubmissionFilter(e.target.value as 'all' | SubmissionMethod)}>
             <option value="all">All submission methods</option>
@@ -194,49 +195,32 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
       </Card>
 
       <Card className="overflow-x-auto rounded-xl border-border/80 p-0 shadow-sm">
-        <table className="w-full min-w-[1500px] text-sm">
-          <thead className="bg-muted/70 text-left text-foreground">
+        <table className="w-full min-w-[850px] table-fixed text-sm">
+          <thead className="bg-muted/70 text-left">
             <tr>
-              <th className="p-3">Funder</th>
-              <th className="p-3">Fit</th>
-              <th className="p-3">Reason</th>
-              <th className="p-3">Score</th>
-              <th className="p-3">Positions</th>
-              <th className="p-3">States</th>
-              <th className="p-3">Min Revenue</th>
-              <th className="p-3">Min TIB</th>
-              <th className="p-3">Min FICO</th>
-              <th className="p-3">Max Funding</th>
-              <th className="p-3">Industry YES / MAYBE / NO</th>
-              <th className="p-3">Submission</th>
-              <th className="p-3">Actions</th>
+              <th className="w-[19%] px-3 py-2">Funder</th>
+              <th className="w-[10%] px-3 py-2">Fit</th>
+              <th className="w-[33%] px-3 py-2">Reason</th>
+              <th className="w-[13%] px-3 py-2">Positions</th>
+              <th className="w-[12%] px-3 py-2">Min revenue</th>
+              <th className="w-[13%] px-3 py-2">Submission</th>
             </tr>
           </thead>
-          <tbody>
-            {filteredResults.map((result) => {
-              const funder = funderByName.get(result.funderName);
-              return (
-                <tr key={result.funderName} className={`border-t border-border/80 align-top ${rowClass[result.fit]}`}>
-                  <td colSpan={13} className="p-0">
-                    <details className="group">
-                      <summary className="grid cursor-pointer grid-cols-[1.2fr_0.6fr_2fr_0.7fr_1fr_1fr_0.8fr_0.7fr_0.7fr_0.8fr_1.4fr_0.8fr_1fr] gap-0 p-3 transition-colors">
-                        <span className="font-medium">{result.funderName}</span>
-                        <span><Badge className={fitClass[result.fit]}>{result.fit}</Badge></span>
-                        <span>{result.summary}</span>
-                        <span>{result.score}% <span className="text-xs text-muted-foreground">({result.scoreLabel})</span></span>
-                        <span>{plain(result.positions)}</span>
-                        <span>{plain(result.states)}</span>
-                        <span>{money(result.minRevenue)}</span>
-                        <span>{result.minTimeInBusinessMonths ?? '—'} {result.minTimeInBusinessMonths ? 'mo' : ''}</span>
-                        <span>{result.minFico ?? '—'}</span>
-                        <span>{money(result.maxFunding)}</span>
-                        <span>{result.industrySummary}</span>
-                        <span><Badge className="border-sky-400/40 bg-sky-500/10 text-sky-800">{submissionMethodLabel(result.submissionMethod)}</Badge></span>
-                        <span className="flex flex-wrap gap-1">
-                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${targetFunders.includes(result.funderName) ? 'border-emerald-400 bg-emerald-100 text-emerald-800' : 'border-border bg-background/70 text-foreground hover:border-emerald-400/60'}`} onClick={(event) => { event.preventDefault(); toggleTarget(result.funderName); }}>{targetFunders.includes(result.funderName) ? 'Targeted' : 'Mark target'}</button>
-                          <button type="button" className={`rounded border px-2 py-1 text-xs font-medium ${queuedFunders.includes(result.funderName) ? 'border-sky-400 bg-sky-100 text-sky-800' : 'border-border bg-background/70 text-foreground hover:border-sky-400/60'}`} onClick={(event) => { event.preventDefault(); toggleQueued(result.funderName); }}>{queuedFunders.includes(result.funderName) ? 'Queued' : 'Queue'}</button>
-                        </span>
-                      </summary>
+          {filteredResults.map(result => {
+            const funder = funderById.get(result.funderId ?? '');
+            if (!funder) return null;
+            const isExpanded = expanded === funder.id;
+            return (
+              <tbody key={funder.id}>
+                <tr className={`border-t border-border/80 ${rowClass[result.fit]}`}>
+                  <td className="px-3 py-2"><button type="button" aria-expanded={isExpanded} onClick={() => setExpanded(isExpanded ? null : funder.id)} className="block w-full truncate text-left font-medium underline-offset-2 hover:underline" title={result.funderName}>{result.funderName}</button></td>
+                  <td className="px-3 py-2"><Badge className={fitClass[result.fit]}>{result.fit === 'YES' ? 'GO' : result.fit}</Badge></td>
+                  <td className="px-3 py-2"><span className="block truncate" title={result.summary}>{result.summary}</span></td>
+                  <td className="px-3 py-2"><span className="block truncate" title={plain(result.positions)}>{plain(result.positions)}</span></td>
+                  <td className="px-3 py-2">{money(result.minRevenue)}</td>
+                  <td className="px-3 py-2">{submissionMethodLabel(result.submissionMethod)}</td>
+                </tr>
+                {isExpanded && <tr><td colSpan={6}>
                       <div className="border-t border-border/80 bg-background/95 p-4">
                         <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
                           <div>
@@ -264,10 +248,12 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
                             </div>
                           </div>
                         </div>
-                        <div className="mt-4 grid gap-2 rounded-md border border-border/80 bg-card/70 p-3 text-sm lg:grid-cols-3">
-                          <button type="button" className="rounded-md border border-emerald-400/40 bg-emerald-50 px-3 py-2 font-medium text-emerald-800 hover:bg-emerald-100" onClick={() => toggleTarget(result.funderName)}>{targetFunders.includes(result.funderName) ? 'Target marked' : 'Mark target'}</button>
-                          <button type="button" className="rounded-md border border-sky-400/40 bg-sky-500/10 px-3 py-2 font-medium text-sky-800 hover:bg-sky-100" onClick={() => toggleQueued(result.funderName)}>{queuedFunders.includes(result.funderName) ? 'Queued for submission' : 'Queue for submission'}</button>
-                          <a href={`/admin/funders?search=${encodeURIComponent(result.funderName)}`} className="inline-flex items-center justify-center rounded-md border border-border bg-muted px-3 py-2 font-medium text-foreground hover:border-primary/50 hover:bg-card">Open full guidelines</a>
+                        <div className="mt-3 flex flex-wrap gap-3 text-sm">
+                          <span>States {plain(result.states)}</span>
+                          <span>Min FICO {result.minFico ?? '—'}</span>
+                          <span>Min TIB {result.minTimeInBusinessMonths ?? '—'}</span>
+                          <span>Max funding {money(result.maxFunding)}</span>
+                          <Link href={{ pathname: '/admin/funders', query: { config: funder.id, dealId }, hash: 'submission-config' }} className="text-primary underline">Submission settings</Link>
                         </div>
                         <div className="mt-4 grid gap-3 lg:grid-cols-3">
                           <div><h4 className="font-medium">Industry YES</h4><p className="text-sm text-muted-foreground">{funder?.industry_yes || '—'}</p></div>
@@ -279,12 +265,10 @@ export function FunderMasterTable({ funders, initialSearch = '', initialDealInpu
                           <div><h4 className="font-medium">Notes / restrictions</h4><p className="text-sm text-muted-foreground">{funder?.notes || '—'}</p></div>
                         </div>
                       </div>
-                    </details>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
+                </td></tr>}
+              </tbody>
+            );
+          })}
         </table>
       </Card>
     </div>

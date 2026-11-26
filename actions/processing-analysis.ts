@@ -44,14 +44,14 @@ async function runDocumentAnalysis(dealId: string, reanalyze: boolean) {
     supabase.from('deal_files').select('id,path,file_type').eq('deal_id', dealId).in('file_type', ['application','statement']).order('file_type').order('id'),
   ]);
   if (deal.error || !deal.data || deal.data.archived_at || deal.data.sales_lost || ['Funded','Killed','KIF'].includes(deal.data.current_stage)) throw new AnalysisIssue('The deal is closed or unavailable.');
-  if (mode === 'mock' && !deal.data.sales_test) throw new AnalysisIssue('Mock analysis is limited to synthetic test deals.');
-  if (mode === 'openai' && deal.data.sales_test) throw new AnalysisIssue('Use the mock provider for test records.');
+  if ((mode === 'mock' || mode === 'openai-pilot') && !deal.data.sales_test) throw new AnalysisIssue('Test analysis is limited to synthetic test deals.');
+  if (mode === 'openai' && deal.data.sales_test) throw new AnalysisIssue('Use a test provider for synthetic records.');
   if (files.error || !files.data?.some(file => file.file_type === 'application') || !files.data.some(file => file.file_type === 'statement')) {
     throw new AnalysisIssue('An application and at least one statement are required.');
   }
   if (files.data.length > 8) throw new AnalysisIssue('Analysis supports up to eight PDFs per deal.');
   const admin = createAdminClient();
-  const model = mode === 'openai' ? process.env.PROCESSING_ANALYSIS_MODEL : 'mock';
+  const model = mode === 'mock' ? 'mock' : process.env.PROCESSING_ANALYSIS_MODEL;
   const key = createHash('sha256').update(JSON.stringify([version, mode, model, files.data.map(file => [file.id,file.path])])).digest('hex');
   const { error: staleError } = await admin.from('processing_document_analyses')
     .update({ status: 'failed', finished_at: new Date().toISOString() }).eq('deal_id', dealId).eq('status', 'analyzing')
