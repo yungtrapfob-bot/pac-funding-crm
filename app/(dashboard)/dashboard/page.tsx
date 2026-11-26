@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { RepDashboardSections } from '@/components/dashboard/rep-dashboard-sections';
 import { Card } from '@/components/ui/card';
 import { requireUser } from '@/lib/auth';
 import { followUpBucket, formatPacificFollowUp } from '@/lib/pacific-time';
@@ -7,13 +8,11 @@ import { createClient } from '@/lib/supabase/server';
 import { reportDates } from '@/lib/sales-report';
 import { readPages } from '@/lib/supabase/read-pages';
 
-const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
-type MonthlyMilestone = { id: string; deal_id: string; kind: string; deals: { funded_amount: number | null; current_stage: string } };
-type MonthlyLedger = { id: string; commission_amount: number; deals: { sales_test: boolean } | null };
+type MonthlyMilestone = { id: string; deal_id: string };
 
 const followUpFilters = { due: 'All due', overdue: 'Overdue', today: 'Today', upcoming: 'Upcoming' } as const;
 
-export default async function Dashboard({ searchParams }: { searchParams: Promise<{ followups?: string; all?: string }> }) {
+export default async function Dashboard({ searchParams }: { searchParams: Promise<{ followups?: string; all?: string; records?: string }> }) {
   const filters = await searchParams;
   const filter = filters.followups && Object.hasOwn(followUpFilters, filters.followups)
     ? filters.followups as keyof typeof followUpFilters : 'due';
@@ -22,7 +21,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
   const isAdmin = profile.role === 'admin';
   const now = new Date().toISOString();
   const month = reportDates({ period: 'month' }, new Date(now));
-  const [leads, deals, production, ledger] = await Promise.all([
+  const [leads, deals, production] = await Promise.all([
     readPages((from,to) => supabase.from('hot_leads')
       .select('id,business_name,sales_stage,next_follow_up_date,last_contact_date,created_at,notes,assigned_rep_id')
       .is('archived_at',null).is('converted_at',null).eq('sales_lost',false).eq('sales_review',false).eq('sales_test',false)
@@ -31,20 +30,12 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
       .not('queue_stage','in','(funded,lost)').is('archived_at',null).eq('sales_test',false)
       .eq(isAdmin ? 'sales_test' : 'assigned_rep_id', isAdmin ? false : profile.id).order('id').range(from,to)),
     readPages<MonthlyMilestone>((from,to) => supabase.from('crm_sales_events')
-      .select('id,deal_id,kind,deals!inner(funded_amount,current_stage)')
-      .in('kind', ['application_completed', 'funded']).eq('deals.sales_test', false)
+      .select('id,deal_id,deals!inner(sales_test)')
+      .eq('kind', 'application_completed').eq('deals.sales_test', false)
       .gte('occurred_at', month.start).lt('occurred_at', month.cutoff)
       .order('id').range(from,to).overrideTypes<MonthlyMilestone[], { merge: false }>()).catch(() => null),
-    isAdmin ? Promise.resolve(null) : readPages<MonthlyLedger>((from,to) => supabase.from('commissions')
-      .select('id,commission_amount,deals(sales_test)').eq('rep_id', profile.id)
-      .gte('recognized_at', month.start).lt('recognized_at', month.cutoff)
-      .order('id').range(from,to).overrideTypes<MonthlyLedger[], { merge: false }>()).catch(() => null),
   ]);
-  const applications = production ? new Set(production.filter(event => event.kind === 'application_completed').map(event => event.deal_id)).size : 'Unavailable';
-  const funded = production && [...new Map(production.filter(event => event.kind === 'funded').map(event => [event.deal_id, event.deals])).values()];
-  const volume = funded && funded.every(deal => deal.current_stage === 'Funded' && Number(deal.funded_amount) > 0)
-    ? money.format(funded.reduce((sum, deal) => sum + Number(deal.funded_amount), 0)) : 'Unavailable';
-  const earned = ledger ? money.format(ledger.filter(row => row.deals?.sales_test !== true).reduce((sum, row) => sum + Number(row.commission_amount), 0)) : 'Unavailable';
+  const applications = production ? new Set(production.map(event => event.deal_id)).size : 'Unavailable';
   const performance = isAdmin ? '/admin' : '/performance';
   const queues = [
     ['Active interested leads', leads.filter(l => l.sales_stage === 'interested').length, '/hot-leads?stage=interested'],
@@ -123,7 +114,7 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         className="block border-t border-border px-3 py-2 text-sm text-primary hover:underline">View all follow-ups</Link>}
     </Card>
 
-    <section className="space-y-2">
+    {isAdmin ? <section className="space-y-2">
       <h2 className="font-semibold">Active pipeline</h2>
       <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
         {queues.map(([label,value,href]) => <Link key={href} href={href}
@@ -132,20 +123,6 @@ export default async function Dashboard({ searchParams }: { searchParams: Promis
         </Link>)}
       </div>
     </section>
-    {!isAdmin && <section className="space-y-2">
-      <h2 className="font-semibold">My performance this month</h2>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        {[
-          ['Completed applications', applications, 'activity-application_completed'],
-          ['Funded deals', funded ? funded.length : 'Unavailable', 'activity-funded'],
-          ['Funded volume', volume, 'volume'],
-          ['Earned commission', earned, 'earned'],
-        ].map(([label,value,metric]) => <Link key={label}
-          href={`/performance?period=month&metric=${metric}`}
-          className="rounded-lg border border-border bg-card px-3 py-2 hover:border-primary">
-          <span className="block text-xs text-muted-foreground">{label}</span><span className="font-semibold tabular-nums">{value}</span>
-        </Link>)}
-      </div>
-    </section>}
+    : <RepDashboardSections repId={profile.id} dates={month} filters={filters} />}
   </div>;
 }
