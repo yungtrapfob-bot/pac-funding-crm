@@ -1,8 +1,7 @@
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
 import { DEFAULT_DEAL_INPUTS, FunderMasterTable } from '@/components/admin/funder-master-table';
-import { loadNormalizedFunderImport } from '@/lib/funder-master-import';
-import { inferSubmissionMethodFromText, normalizeSubmissionMethod, type FunderMasterRecord, type StoredSubmissionMethod } from '@/lib/funder-routing';
+import { readFunderInventory } from '@/lib/funder-inventory';
 import { updateFunderSubmissionConfig } from '@/actions/funders';
 
 type SearchParams = { search?: string; dealId?: string; configSaved?: string; configError?: string; funder?: string };
@@ -20,12 +19,8 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
   const searchParams = await pendingSearchParams;
   await requireRole(['admin']);
   const supabase = await createClient();
-  const [{ data: submissionConfigs, error: submissionConfigError }, fallbackImport, { data: dealRows }] = await Promise.all([
-    supabase
-      .from('funder_submission_configs')
-      .select('funder_key,funder_name,submission_method,primary_submission_email,submission_cc,submission_bcc,subject_template,body_template,required_document_types,internal_submission_notes,is_active,created_at,updated_at')
-      .order('funder_name'),
-    loadNormalizedFunderImport(),
+  const [inventory, { data: dealRows }] = await Promise.all([
+    readFunderInventory(supabase),
     searchParams?.dealId
       ? supabase
         .from('deals')
@@ -48,40 +43,13 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
     fico: fieldValue(deal.fico)
   } : DEFAULT_DEAL_INPUTS;
 
-  const configByKey = new Map((submissionConfigs ?? []).map((config) => [config.funder_key, config]));
-
-  const effectiveFunders: FunderMasterRecord[] = fallbackImport.funders.map((f) => {
-    const key = f.funderName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    const config = configByKey.get(key);
-
-    return {
-      id: key,
-      funder_name: f.funderName,
-      positions: f.positions,
-      states: f.states,
-      min_monthly_revenue: f.minMonthlyRevenue,
-      min_time_in_business_months: f.minTimeInBusinessMonths,
-      min_fico: f.minFico,
-      max_funding: f.maxFunding,
-      payment_frequency: f.paymentFrequency,
-      submission_method: config ? normalizeSubmissionMethod(config.submission_method as StoredSubmissionMethod) : inferSubmissionMethodFromText(f.notes, f.requiredDocs),
-      submission_endpoint: '',
-      required_docs: f.requiredDocs,
-      industry_yes: f.industryYes,
-      industry_maybe: f.industryMaybe,
-      industry_no: f.industryNo,
-      notes: f.notes,
-      primary_submission_email: config?.primary_submission_email ?? null,
-      submission_cc: config?.submission_cc ?? null,
-      submission_bcc: config?.submission_bcc ?? null,
-      subject_template: config?.subject_template ?? 'Submission: {{business_name}} - {{requested_amount}} - {{state}}',
-      body_template: config?.body_template ?? '',
-      required_document_types: config?.required_document_types ?? ['application', 'statement'],
-      internal_submission_notes: config?.internal_submission_notes ?? null,
-      is_active: config?.is_active ?? true,
-      matrix_row: f.matrixRow
-    };
-  });
+  const { funders: effectiveFunders, duplicateKeys, unmatchedConfigs } = inventory;
+  const active = effectiveFunders.filter(funder => funder.is_active);
+  const emailMissing = active.filter(funder => funder.submission_method === 'email' && !funder.primary_submission_email).length;
+  const methodMissing = active.filter(funder => funder.submission_method === 'tbd').length;
+  const portalMissing = active.filter(funder => ['portal','manual_portal'].includes(funder.submission_method) && !funder.portal_url).length;
+  const missing = (value: string | null) => !value?.trim() || /^(unknown|not specified|not stated|n\/a)$/i.test(value.trim());
+  const guidelinesMissing = active.filter(funder => [funder.positions,funder.states,funder.required_docs].some(missing)).length;
 
   return (
     <div className="space-y-6">
@@ -97,24 +65,27 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
         <p>Recipient emails, CC/BCC, templates, internal submission notes, required document types, and active status are loaded only on this admin route and are never hardcoded in UI components.</p>
         {searchParams?.configSaved ? <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-emerald-800">Saved submission configuration for {searchParams.configSaved}.</p> : null}
         {searchParams?.configError ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-red-800">Unable to save submission configuration{searchParams.funder ? ` for ${searchParams.funder}` : ''}. Please review the values and try again; the detailed error was logged for admins.</p> : null}
-        {submissionConfigError ? <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-2 text-red-800">Unable to load saved submission configurations right now. Funder routing guidelines are still available from the bundled import.</p> : null}
+        <p className="mt-2">{effectiveFunders.length} funders · {active.length} active · {methodMissing} missing method · {emailMissing} missing recipient · {portalMissing} missing portal URL · {guidelinesMissing} missing core guidelines · {duplicateKeys.length} duplicate keys · {unmatchedConfigs} unmatched configs</p>
         <div className="mt-3 space-y-3">
-          {effectiveFunders.slice(0, 12).map((funder) => (
-            <form key={funder.id ?? funder.funder_name} action={updateFunderSubmissionConfig} className="grid gap-2 rounded bg-white/70 p-3 md:grid-cols-4">
-              <input type="hidden" name="funder_key" value={funder.id ?? ''} />
+          {effectiveFunders.map((funder) => (
+            <details key={funder.id} className="rounded bg-white/70 p-3"><summary className="cursor-pointer font-medium">{funder.funder_name}</summary><form action={updateFunderSubmissionConfig} className="mt-2 grid gap-2 md:grid-cols-4">
+              <input type="hidden" name="funder_key" value={funder.key} />
               <input type="hidden" name="funder_name" value={funder.funder_name} />
-              <p className="font-medium md:col-span-4">{funder.funder_name}</p>
+
               <select name="submission_method" defaultValue={String(funder.submission_method ?? 'tbd')} className="rounded-md border px-2 py-1"><option value="email">Email</option><option value="api">API</option><option value="portal">Portal</option><option value="manual_portal">Manual Portal</option><option value="tbd">TBD</option></select>
               <input name="primary_submission_email" defaultValue={funder.primary_submission_email ?? ''} placeholder="Primary submission email" className="rounded-md border px-2 py-1" />
               <input name="submission_cc" defaultValue={funder.submission_cc ?? ''} placeholder="CC" className="rounded-md border px-2 py-1" />
+              <input name="portal_url" type="url" aria-label="HTTPS portal URL" defaultValue={funder.portal_url ?? ''} placeholder="HTTPS portal URL" className="rounded-md border px-2 py-1" />
               <input name="submission_bcc" defaultValue={funder.submission_bcc ?? ''} placeholder="BCC" className="rounded-md border px-2 py-1" />
               <input name="subject_template" defaultValue={funder.subject_template ?? 'Submission: {{business_name}} - {{requested_amount}} - {{state}}'} className="rounded-md border px-2 py-1 md:col-span-2" />
               <input name="required_document_types" defaultValue={(funder.required_document_types ?? ['application','statement']).join(', ')} className="rounded-md border px-2 py-1 md:col-span-2" />
               <textarea name="body_template" defaultValue={funder.body_template ?? ''} className="min-h-24 rounded-md border px-2 py-1 md:col-span-2" />
               <textarea name="internal_submission_notes" defaultValue={funder.internal_submission_notes ?? ''} placeholder="Internal submission notes" className="min-h-24 rounded-md border px-2 py-1 md:col-span-2" />
               <label className="flex items-center gap-2"><input type="checkbox" name="is_active" defaultChecked={funder.is_active !== false} /> Active</label>
-              <button className="rounded-md bg-primary px-3 py-2 text-primary-foreground" type="submit">Save config</button>
-            </form>
+              <label className="flex items-center gap-2 md:col-span-2"><input type="checkbox" name="verify_destination" /> Independently verified the destination and recipients</label>
+              <p className="text-xs text-muted-foreground">{funder.verified_at ? 'Destination was verified. Verify again when saving changes.' : 'Destination has not been verified.'}</p>
+              <button className="rounded-md bg-primary px-3 py-2 text-primary-foreground" type="submit" disabled={funder.configurationAmbiguous}>Save config</button>
+            </form></details>
           ))}
         </div>
       </div>
