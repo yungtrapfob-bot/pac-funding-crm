@@ -1,3 +1,5 @@
+import { readFunderInventory } from '@/lib/funder-inventory';
+import { evaluateProcessingFunders } from '@/lib/processing-routing';
 import { DealStageControls } from '@/components/deals/deal-stage-controls';
 import { ApplicationDocumentReview, UploadDocumentsButton } from '@/components/deals/application-document-review';
 import { SalesActions } from '@/components/sales/sales-actions';
@@ -24,7 +26,6 @@ import {
 } from "@/lib/utils";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { evaluateFunders, type FunderMasterRecord } from "@/lib/funder-routing";
 import { DealRoutingPanel } from "@/components/deals/deal-routing-panel";
 import { FunderSubmissionsWorkspace } from "@/components/deals/funder-submissions-workspace";
 import { buildPreview } from "@/lib/funder-submissions";
@@ -92,14 +93,7 @@ export default async function DealDetailPage({
     .select("*")
     .eq("deal_id", params.id)
     .order("created_at", { ascending: false });
-  const { data: funders } = isAdmin
-    ? await supabase
-        .from("funder_master")
-        .select(
-          "id,funder_name,positions,states,min_monthly_revenue,min_time_in_business_months,min_fico,max_funding,payment_frequency,required_docs,required_document_types,industry_yes,industry_maybe,industry_no,notes,submission_method,submission_endpoint,primary_submission_email,submission_cc,submission_bcc,subject_template,body_template,internal_submission_notes,is_active,matrix_row",
-        )
-        .order("funder_name")
-    : { data: [] };
+  const funders = isAdmin ? (await readFunderInventory(supabase)).funders : [];
   const { data: files } = await supabase
     .from("deal_files")
     .select("*")
@@ -181,20 +175,7 @@ export default async function DealDetailPage({
   const requestedAmount = extractRequestedAmountFromInternalNotes(
     deal.internal_notes,
   );
-  const routingResults = evaluateFunders(
-    (funders ?? []) as FunderMasterRecord[],
-    {
-      monthlyRevenue: deal.monthly_revenue ?? null,
-      timeInBusinessMonths: deal.time_in_business_months ?? null,
-      fico: deal.fico ?? null,
-      positions: deal.positions ?? null,
-      nsfCount: deal.nsf_count ?? null,
-      depositsPerMonth: deal.deposits ?? null,
-      state: deal.state ?? null,
-      industry: deal.industry ?? null,
-      requestedAmount: requestedAmount ?? deal.funded_amount ?? null,
-    },
-  );
+  const routingResults = evaluateProcessingFunders(funders, deal);
 
   return (
     <div className="space-y-4">

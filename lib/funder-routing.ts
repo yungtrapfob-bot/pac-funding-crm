@@ -48,6 +48,7 @@ export type Reason = { status: 'pass' | 'warn' | 'fail' | 'unknown'; message: st
 export type RoutingFit = 'YES' | 'MAYBE' | 'NO';
 
 export type RoutingResult = {
+  funderId?: string;
   funderName: string;
   result: 'recommended' | 'possible' | 'declined';
   fit: RoutingFit;
@@ -212,6 +213,7 @@ function extractPositionNumbers(text: string | null | undefined) {
 
 function positionDecision(dealPosition: number | null, positions: string | null): Reason {
   if (dealPosition == null) return { status: 'unknown', message: 'Position not provided.' };
+  if (/[():;]|texas|reverse|prefer|up to|through|case.by.case/i.test(positions ?? '')) return { status: 'warn', message: 'Conditional position guideline needs review.' };
   if (isBlankRule(positions)) return { status: 'unknown', message: 'No position rule stored.' };
 
   const text = clean(positions);
@@ -245,13 +247,16 @@ function stateTokens(text: string) {
 function stateDecision(dealState: string | null, states: string | null): Reason {
   const st = clean(dealState).toUpperCase();
   if (!st) return { status: 'unknown', message: 'State not provided.' };
-  if (isBlankRule(states)) return { status: 'pass', message: `State ${st} has no matrix restriction.` };
+  if (isBlankRule(states)) return { status: 'unknown', message: 'State eligibility is not documented.' };
 
   const s = clean(states);
   const tokens = stateTokens(states || '');
   const hasState = tokens.includes(st);
+  if (/special rule|home-based|case.by.case|product|only if/.test(s)) {
+    return { status: 'warn', message: 'Conditional state guideline needs review.' };
+  }
   if (s.includes('all 50') || s.includes('all states') || s.includes('all 50 states')) {
-    if (/except|not available|restricted/.test(s) && hasState) return { status: 'warn', message: `State ${st} has product/state nuance.` };
+    if (/except|not available|restricted/.test(s) && hasState) return { status: 'fail', message: `State ${st} is excluded by the guideline.` };
     return { status: 'pass', message: `State ${st} allowed.` };
   }
   if (s.includes('except') || s.includes('restricted') || s.includes('not available')) {
@@ -265,7 +270,7 @@ function stateDecision(dealState: string | null, states: string | null): Reason 
 
 function numericDecision(label: string, dealValue: number | null, ruleValue: number | null, passMessage: (value: number) => string, failMessage: (value: number) => string, noRuleMessage: string, compare: (deal: number, rule: number) => boolean): Reason {
   if (dealValue == null) return { status: 'unknown', message: `${label} not provided.` };
-  if (ruleValue == null) return { status: 'pass', message: noRuleMessage };
+  if (ruleValue == null) return { status: 'unknown', message: noRuleMessage };
   return compare(dealValue, ruleValue)
     ? { status: 'pass', message: passMessage(ruleValue) }
     : { status: 'fail', message: failMessage(ruleValue) };
@@ -374,7 +379,8 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
     const revenueMinimum = getIndustryMinimum(f, deal.industry);
     const tibMinimum = timeInBusinessRule(f, deal.industry);
     const minFico = ficoRule(f, deal.industry, deal.positions);
-    const maxNsf = maxNsfRule(f.matrix_row['Max NSFs/Neg Days']);
+    const nsfRule = f.matrix_row['Max NSFs/Neg Days'];
+    const maxNsf = /neg(?:ative)?[ .-]*days?/i.test(nsfRule ?? '') ? null : maxNsfRule(nsfRule);
     const minDeposits = minDepositRule(f.matrix_row['Min Deposits/Month'], deal.industry);
     const maxFunding = maxFundingRule(f, deal.positions);
 
@@ -442,15 +448,35 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
       (dealValue, ruleValue) => dealValue <= ruleValue
     ));
 
+    const rawMinimum = f.matrix_row['Min Funding'];
+    if (/^\$?[\d,.]+[kKmM]?$/.test(rawMinimum?.trim() ?? '')) {
+      reasons.push(numericDecision('Funding request', deal.requestedAmount, minNumber(rawMinimum),
+        value => `Request clears $${value.toLocaleString()} min.`, value => `Request below $${value.toLocaleString()} min.`,
+        'Minimum funding is not documented.', (actual, minimum) => actual >= minimum));
+    }
+    if (!isBlankRule(f.matrix_row.Defaults)) {
+      reasons.push({ status: 'warn', message: 'Verify the documented default and bankruptcy conditions.' });
+    }
+    const conditionalProduct = [f.positions, f.matrix_row['Min Monthly Rev'], f.matrix_row['Max Funding']]
+      .some(value => /reverse|standard mca|prime reverse|by product/i.test(value ?? ''));
+    if (conditionalProduct) {
+      reasons.push({ status: 'warn', message: 'Confirm the applicable funder product before submitting.' });
+      // Numeric ranges from different products cannot establish a hard rejection.
+      for (const reason of reasons) if (reason.status === 'fail' && /Revenue|TIB|FICO|NSF|Deposits|Request/.test(reason.message)) {
+        reason.status = 'warn';
+      }
+    }
+
     const fails = reasons.filter((r) => r.status === 'fail').length;
     const warns = reasons.filter((r) => r.status === 'warn').length;
     const passes = reasons.filter((r) => r.status === 'pass').length;
     const knownChecks = reasons.filter((r) => r.status !== 'unknown').length;
-    const fit: RoutingFit = fails > 0 ? 'NO' : warns > 0 ? 'MAYBE' : 'YES';
+    const fit: RoutingFit = fails > 0 ? 'NO' : warns > 0 || knownChecks < reasons.length ? 'MAYBE' : 'YES';
     const result: RoutingResult['result'] = fit === 'NO' ? 'declined' : fit === 'MAYBE' ? 'possible' : 'recommended';
     const score = knownChecks === 0 ? 0 : Math.round((passes / knownChecks) * 100);
 
     return {
+      funderId: f.id,
       funderName: f.funder_name,
       result,
       fit,

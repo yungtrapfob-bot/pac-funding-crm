@@ -1,3 +1,5 @@
+import { readFunderInventory } from '@/lib/funder-inventory';
+import { evaluateProcessingFunders } from '@/lib/processing-routing';
 import { readPages } from '@/lib/supabase/read-pages';
 import { createClient } from '@/lib/supabase/server';
 import { requireRole } from '@/lib/auth';
@@ -16,7 +18,7 @@ export async function getDeals(role: UserRole, userId: string, repFilterId?: str
 export async function getProcessingQueue(stage?: string) {
   await requireRole(['admin']);
   const supabase = await createClient();
-  const [items, reps] = await Promise.all([
+  const [items, reps, { funders }] = await Promise.all([
     readPages((from,to) => {
       let query = supabase.from('crm_sales_deal_queue')
         .select('id,business_name,assigned_rep_id,sales_processor_id,queue_stage,has_documents,application_review_required,application_reviewed_at,requested_amount,submitted_at,sales_next_action,sales_follow_up_at')
@@ -25,8 +27,21 @@ export async function getProcessingQueue(stage?: string) {
       return query.range(from,to);
     }),
     readPages((from,to) => supabase.from('profiles').select('id,full_name').order('id').range(from,to)),
+    readFunderInventory(supabase),
   ]);
   const names = new Map(reps.map(rep => [rep.id,rep.full_name]));
-  return items.map(row => ({ ...row, assigned_name: names.get(row.assigned_rep_id),
-    processor_name: names.get(row.sales_processor_id) }));
+  const deals = new Map();
+  const ids = items.map(row => row.id);
+  for (let offset = 0; offset < ids.length; offset += 100) {
+    const { data, error } = await supabase.from('deals')
+      .select('id,monthly_revenue,time_in_business_months,fico,positions,nsf_count,deposits,state,industry,requested_amount,internal_notes')
+      .in('id', ids.slice(offset, offset + 100));
+    if (error) throw new Error('Processing deal inputs are unavailable.');
+    for (const deal of data) deals.set(deal.id, deal);
+  }
+  return items.map(row => {
+    const counts = { YES: 0, MAYBE: 0, NO: 0 };
+    for (const result of evaluateProcessingFunders(funders, deals.get(row.id) ?? {})) counts[result.fit]++;
+    return { ...row, counts, assigned_name: names.get(row.assigned_rep_id), processor_name: names.get(row.sales_processor_id) };
+  });
 }
