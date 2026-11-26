@@ -1,3 +1,5 @@
+import { emailMode } from '@/lib/email-provider';
+import { originalFilename, selectedPackageFiles } from '@/lib/funder-submissions';
 import { readFunderInventory } from '@/lib/funder-inventory';
 import { evaluateProcessingFunders } from '@/lib/processing-routing';
 import { DealStageControls } from '@/components/deals/deal-stage-controls';
@@ -26,7 +28,6 @@ import {
 } from "@/lib/utils";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { DealRoutingPanel } from "@/components/deals/deal-routing-panel";
 import { FunderSubmissionsWorkspace } from "@/components/deals/funder-submissions-workspace";
 import { buildPreview } from "@/lib/funder-submissions";
 
@@ -312,8 +313,11 @@ export default async function DealDetailPage({
 
       {isAdmin ? (
         <>
-          <DealRoutingPanel results={routingResults} dealId={deal.id} />
-          <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults} />
+          <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults}
+            documents={selectedPackageFiles(fileRows, fileRows.map(file => file.id)).filter(file => !['application', 'statement'].includes(file.file_type ?? ''))
+              .map(file => ({ id: file.id, fileType: file.file_type, filename: originalFilename(file.path) }))}
+            history={(submissionLogs ?? []).map(log => ({ id: log.id, funder_id: log.funder_id, status: log.status, provider_message_id: log.provider_message_id }))}
+            mode={emailMode()} readOnly={Boolean(deal.archived_at) || ['lost','funded'].includes(queueStage)} />
         </>
       ) : null}
 

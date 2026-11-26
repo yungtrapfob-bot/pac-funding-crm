@@ -4,11 +4,9 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { requireRole } from '@/lib/auth';
 import { createClient } from '@/lib/supabase/server';
+import { z } from 'zod';
+import { readFunderInventory, funderKey } from '@/lib/funder-inventory';
 import { normalizeSubmissionMethod } from '@/lib/funder-routing';
-
-function funderKey(value: string) {
-  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
 
 export async function updateFunderSubmissionConfig(formData: FormData) {
   await requireRole(['admin']);
@@ -22,13 +20,29 @@ export async function updateFunderSubmissionConfig(formData: FormData) {
 
   const submissionMethod = normalizeSubmissionMethod(String(formData.get('submission_method') ?? 'tbd'));
   const required_document_types = String(formData.get('required_document_types') ?? '').split(',').map((x) => x.trim()).filter(Boolean);
+  const master = (await readFunderInventory(supabase)).funders.find(row => row.key === key);
+  const primary = String(formData.get('primary_submission_email') ?? '').trim();
+  const cc = String(formData.get('submission_cc') ?? '').trim();
+  const bcc = String(formData.get('submission_bcc') ?? '').trim();
+  const portal = String(formData.get('portal_url') ?? '').trim();
+  const portalUrl = z.url({ protocol: /^https$/ }).safeParse(portal);
+  const validPortal = portalUrl.success && !new URL(portalUrl.data).username && !new URL(portalUrl.data).password;
+  const verify = formData.get('verify_destination') === 'on';
+  const emailValid = [primary, ...cc.split(','), ...bcc.split(',')].every(address => !address.trim() || z.email().safeParse(address.trim()).success);
+  const verificationAllowed = submissionMethod === 'email' ? Boolean(primary) && emailValid
+    : ['portal', 'manual_portal'].includes(submissionMethod) && validPortal;
+  if (!master || master.configurationAmbiguous || !emailValid || (portal && !validPortal) || (verify && !verificationAllowed)) {
+    redirect(`/admin/funders?configError=invalid-destination&funder=${encodeURIComponent(funderName)}`);
+  }
   const { error } = await supabase.from('funder_submission_configs').upsert({
     funder_key: key,
-    funder_name: funderName,
+    funder_name: master.funder_name,
+    portal_url: portal || null,
+    verified_at: verify ? new Date().toISOString() : null,
     submission_method: submissionMethod,
-    primary_submission_email: String(formData.get('primary_submission_email') ?? '').trim() || null,
-    submission_cc: String(formData.get('submission_cc') ?? '').trim() || null,
-    submission_bcc: String(formData.get('submission_bcc') ?? '').trim() || null,
+    primary_submission_email: primary || null,
+    submission_cc: cc || null,
+    submission_bcc: bcc || null,
     subject_template: String(formData.get('subject_template') ?? '').trim() || 'Submission: {{business_name}} - {{requested_amount}} - {{state}}',
     body_template: String(formData.get('body_template') ?? '').trim(),
     required_document_types: required_document_types.length ? required_document_types : ['application', 'statement'],
@@ -38,7 +52,7 @@ export async function updateFunderSubmissionConfig(formData: FormData) {
   }, { onConflict: 'funder_key' });
 
   if (error) {
-    console.error('Failed to save funder submission config', { funder_key: key, funder_name: funderName, code: error.code, message: error.message, details: error.details });
+    console.error('Failed to save funder submission config', { code: error.code });
     redirect(`/admin/funders?configError=save-failed&funder=${encodeURIComponent(funderName)}`);
   }
 

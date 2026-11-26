@@ -180,6 +180,54 @@ try {
   console.log('PASS duplicate conversion and database authorization checks.');
   must(await service.from('deals').update({closer_rep_id:closer.id}).eq('id',deal));
   await admin.goto(base+'/deals/'+deal);
+  if (process.env.QA_PROCESSING_CHECKPOINT === 'yes') {
+    must(await service.from('deals').update({ sales_test: true }).eq('id', deal));
+    const configured = [
+      { suffix: 'email', method: 'email', recipient: 'processing-qa@example.test' },
+      { suffix: 'wrong-recipient', method: 'email', recipient: 'blocked@example.test' },
+      { suffix: 'portal', method: 'portal', portal: 'https://portal.example.test/submit' },
+    ];
+    for (const target of configured) {
+      const key = `qa-processing-${nonce}-${target.suffix}`;
+      must(await service.from('funder_master').insert({ funder_name: key, matrix_row: {}, submission_method: target.method }));
+      must(await service.from('funder_submission_configs').insert({
+        funder_key: key, funder_name: key, submission_method: target.method,
+        primary_submission_email: target.recipient, portal_url: target.portal,
+        subject_template: 'Synthetic package {{deal_id}}', body_template: 'Synthetic review',
+        required_document_types: ['application','statement'], verified_at: new Date().toISOString(),
+      }));
+    }
+    await admin.reload();
+    const workspace = admin.locator('#funder-submissions');
+    for (const target of configured) {
+      await workspace.getByRole('checkbox', { name: `Select qa-processing-${nonce}-${target.suffix}`, exact:true }).check();
+    }
+    await workspace.getByRole('button', { name: 'Review selected packages' }).click();
+    await workspace.getByLabel('Review note for MAYBE recommendations').fill('Synthetic package reviewed.');
+    await workspace.getByLabel('I completed each selected portal submission manually').check();
+    await workspace.getByRole('button', { name: 'Confirm selected submissions' }).click();
+    const status = workspace.getByRole('status');
+    await status.waitFor();
+    const feedback = await status.innerText();
+    assert.match(feedback, /Mock provider accepted/);
+    assert.match(feedback, /Portal submission recorded/);
+    assert.match(feedback, /package was rejected/);
+    const logs = must(await service.from('funder_submission_logs').select('id,funder_name,status,provider_message_id,filenames_attached').eq('deal_id', deal));
+    assert.deepEqual(logs.map(row => row.status).sort(), ['failed','sent','sent']);
+    assert.ok(logs.filter(row => row.status === 'sent').every(row => row.provider_message_id && row.filenames_attached.length === 5));
+    const own = await session(opener.email);
+    assert.equal(must(await own.client.from('funder_submission_logs').select('id').eq('deal_id',deal)).length,0);
+    assert.ok((await own.client.rpc('crm_complete_processing_submission', {
+      log_id:logs[0].id,evidence_id:'fake',actor_id:opener.id,actor_session_id:opener.id,
+    })).error);
+    const milestones = must(await service.from('crm_sales_events').select('funder').eq('deal_id', deal).eq('kind','submitted'));
+    assert.deepEqual(milestones.map(row => row.funder).sort(), [`qa-processing-${nonce}-email`,`qa-processing-${nonce}-portal`]);
+    await workspace.getByRole('checkbox', { name: `Select qa-processing-${nonce}-email`, exact:true }).isDisabled().then(assert.ok);
+    await admin.setViewportSize({width:1440,height:900});
+    await admin.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','processing-submissions.png'),fullPage:true});
+    must(await service.from('deals').update({ sales_test: false }).eq('id', deal));
+    console.log('PASS admin package review, controlled email, partial batch failure, portal confirmation, DIP events and rep isolation.');
+  }
   await action(admin,'submitted',{value:'Synthetic Funder A'});
   await action(admin,'submitted',{value:'Synthetic Funder B'});
   const offerForm=admin.locator('form').filter({has:admin.locator('[name=funder]')});

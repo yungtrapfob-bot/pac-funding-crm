@@ -1,34 +1,148 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import { sendFunderSubmissions } from '@/actions/funder-submissions';
-import { Badge } from '@/components/ui/badge';
+import { useState, useTransition } from 'react';
+import { previewProcessingSubmissions, reconcileProcessingSubmission, sendProcessingSubmissions } from '@/actions/funder-submissions';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import Link from 'next/link';
 
-type Preview = { funderId: string; funderName: string; method: string; to: string; cc?: string; bcc?: string; subject: string; body: string; attachments: { filename: string; fileType: string | null }[]; missingDocuments: string[]; previousStatus?: string | null; lastSubmittedAt?: string | null; idempotencyKey: string };
-type Routing = { funderName: string; fit: string; summary: string; score: number };
+type Preview = Awaited<ReturnType<typeof previewProcessingSubmissions>>[number];
+type Routing = { funderId?: string; fit: string; summary: string; reasons: { message: string }[] };
+type Document = { id: string; fileType: string | null; filename: string };
+type History = { id: string; funder_id: string; status: string; provider_message_id: string | null };
 
-export function FunderSubmissionsWorkspace({ dealId, previews, routingResults }: { dealId: string; previews: Preview[]; routingResults: Routing[] }) {
+const isPortal = (method: string) => ['portal', 'manual_portal'].includes(method);
+const fitNames: Record<string, string> = { YES: 'GO', MAYBE: 'MAYBE', NO: 'NO' };
+const tones: Record<string, string> = {
+  YES: 'bg-emerald-50 text-emerald-900', MAYBE: 'bg-amber-50 text-amber-900', NO: 'bg-red-50 text-red-900',
+};
+
+export function FunderSubmissionsWorkspace({ dealId, previews, routingResults, documents, history, mode, readOnly }: {
+  dealId: string; previews: Preview[]; routingResults: Routing[];
+  documents: Document[]; history: History[]; mode: string; readOnly: boolean;
+}) {
   const [selected, setSelected] = useState<string[]>([]);
-  const [priority, setPriority] = useState('normal');
-  const [confirming, setConfirming] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [isPending, startTransition] = useTransition();
-  const routingByName = useMemo(() => new Map(routingResults.map((r) => [r.funderName, r])), [routingResults]);
-  const selectedPreviews = previews.filter((p) => selected.includes(p.funderId));
-  const canSend = selectedPreviews.length > 0 && selectedPreviews.every((p) => p.method === 'email' && p.to && !p.previousStatus && p.missingDocuments.length === 0);
+  const [extras, setExtras] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState<Preview[]>([]);
+  const [notice, setNotice] = useState<string[]>([]);
+  const [review, setReview] = useState('');
+  const [portalConfirmed, setPortalConfirmed] = useState(false);
+  const [pending, startTransition] = useTransition();
+  const routingById = new Map(routingResults.map((result, index) => [result.funderId, { result, index }]));
+  const sorted = [...previews].sort((a,b) => (routingById.get(a.funderId)?.index ?? Infinity) - (routingById.get(b.funderId)?.index ?? Infinity));
+  const input = { dealId, targets: selected.map(id => ({ id, extraIds: extras })) };
+  const hasPortal = confirmed.some(item => isPortal(item.method));
+  const canConfirm = confirmed.length > 0 && (!hasPortal || portalConfirmed)
+    && confirmed.every(item => item.missingDocuments.length === 0)
+    && (!confirmed.some(item => routingById.get(item.funderId)?.result.fit === 'MAYBE') || Boolean(review.trim()));
 
-  function toggle(id: string) { setSelected((current) => current.includes(id) ? current.filter((x) => x !== id) : [...current, id]); }
-  function send() {
-    const fd = new FormData(); fd.set('deal_id', dealId); fd.set('priority', priority); selected.forEach((id) => fd.append('funder_id', id));
-    startTransition(async () => { try { await sendFunderSubmissions(fd); setMessage('Submission send completed. Provider-confirmed statuses are in the log.'); setSelected([]); setConfirming(false); } catch (e) { setMessage(e instanceof Error ? e.message : String(e)); } });
+  function run(work: () => Promise<void>) {
+    setNotice([]);
+    startTransition(async () => {
+      try { await work(); } catch (error) {
+        setNotice([error instanceof Error ? error.message : 'The request could not be completed.']);
+      }
+    });
   }
 
-  return <Card className="space-y-4">
-    <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-medium">Funder Submissions</h2><p className="text-sm text-muted-foreground">Admin-only workspace for previewing and sending email submission packages. Live funder delivery is blocked unless the server provider is configured beyond the controlled test sender.</p></div><label className="text-sm font-medium">Priority<select className="ml-2 rounded-md border px-2 py-1" value={priority} onChange={(e) => setPriority(e.target.value)}><option value="normal">Normal</option><option value="high">High</option><option value="rush">Rush</option></select></label></div>
-    {message ? <div className="rounded-md border bg-muted/40 p-3 text-sm">{message}</div> : null}
-    <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-sm"><thead className="bg-muted/60 text-left"><tr><th className="p-2">Target</th><th className="p-2">Funder</th><th className="p-2">Recommended</th><th className="p-2">Method</th><th className="p-2">Readiness</th><th className="p-2">Docs</th><th className="p-2">Previous</th><th className="p-2">Last submitted</th><th className="p-2">Guidelines</th></tr></thead><tbody>{previews.map((p) => { const route = routingByName.get(p.funderName); const ready = p.method === 'email' && p.to && !p.previousStatus && p.missingDocuments.length === 0; return <tr key={p.funderId} className="border-t align-top"><td className="p-2"><input type="checkbox" checked={selected.includes(p.funderId)} disabled={p.method !== 'email' || Boolean(p.previousStatus)} onChange={() => toggle(p.funderId)} /></td><td className="p-2 font-medium">{p.funderName}<p className="text-xs text-muted-foreground">{p.to || 'No recipient configured'}</p></td><td className="p-2"><Badge>{route?.fit ?? '—'}</Badge><p className="mt-1 text-xs text-muted-foreground">{route?.summary ?? 'Not routed'}</p></td><td className="p-2">{p.method}</td><td className="p-2"><Badge className={ready ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-amber-200 bg-amber-50 text-amber-800'}>{ready ? 'Ready' : 'Needs review'}</Badge></td><td className="p-2">{p.missingDocuments.length ? <span className="text-amber-700">Missing {p.missingDocuments.join(', ')}</span> : 'Complete'}</td><td className="p-2">{p.previousStatus ?? 'None'}</td><td className="p-2">{p.lastSubmittedAt ? new Date(p.lastSubmittedAt).toLocaleString() : '—'}</td><td className="p-2"><details><summary className="cursor-pointer text-primary underline">Open</summary><pre className="mt-2 whitespace-pre-wrap rounded bg-muted p-2 text-xs">Subject: {p.subject}\n\n{p.body}</pre></details></td></tr>; })}</tbody></table></div>
-    {confirming ? <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-3"><h3 className="font-semibold text-amber-950">Confirm selected submissions</h3>{selectedPreviews.map((p) => <div key={p.funderId} className="rounded bg-white/70 p-3 text-sm"><p className="font-medium">{p.funderName} → {p.to}</p><p>CC: {p.cc || '—'} · BCC: {p.bcc || '—'}</p><p className="font-medium">{p.subject}</p><pre className="mt-2 whitespace-pre-wrap text-xs">{p.body}</pre><p className="mt-2">Attachments: {p.attachments.map((a) => a.filename).join(', ') || 'None'}</p>{p.missingDocuments.length ? <p className="text-red-700">Missing: {p.missingDocuments.join(', ')}</p> : null}</div>)}<Button disabled={!canSend || isPending} onClick={send}>{isPending ? 'Sending…' : 'Send Selected Submissions'}</Button></div> : <Button disabled={!selected.length} onClick={() => setConfirming(true)}>Preview / Confirm Selected</Button>}
+  return <Card id="funder-submissions" className="space-y-3">
+    <header className="flex flex-wrap items-start justify-between gap-2">
+      <div>
+        <h2 className="font-semibold">Recommendations and submissions</h2>
+        <p className="text-xs text-muted-foreground">Recommendations use the saved guidelines and underwriting inputs.</p>
+      </div>
+      <div className="flex gap-1 text-xs">
+        {Object.entries(fitNames).map(([fit, label]) => <span className={`rounded px-2 py-1 ${tones[fit]}`} key={fit}>
+          {label} {routingResults.filter(result => result.fit === fit).length}
+        </span>)}
+      </div>
+    </header>
+    <p className="text-sm text-muted-foreground">{readOnly ? 'This deal is closed to new submissions.' : mode === 'test'
+      ? 'Controlled mock email is available for test deals.' : mode === 'resend' ? 'Live email requires authorization for each reviewed package.'
+        : 'Email delivery is disabled. Verified portals can be recorded manually.'}</p>
+    {!!notice.length && <ul role="status" className="rounded border border-border bg-muted/40 p-2 text-sm">{notice.map(message => <li key={message}>{message}</li>)}</ul>}
+    <div className="max-h-[28rem] overflow-auto rounded border border-border">
+      <table className="w-full min-w-[675px] text-left text-sm">
+        <thead className="sticky top-0 bg-muted text-xs"><tr>
+          {['Select','Funder','Fit and guidelines','Method','Readiness','History'].map(label => <th key={label} scope="col" className="px-2 py-2">{label}</th>)}
+        </tr></thead>
+        <tbody>{sorted.map(item => {
+          const routing = routingById.get(item.funderId)?.result;
+          const selectable = !readOnly && Boolean(item.verifiedAt) && routing?.fit !== 'NO'
+            && (item.method === 'email' ? mode !== 'disabled' : isPortal(item.method))
+            && (!item.previousStatus || item.previousStatus === 'failed');
+          const reconcile = history.find(log => log.funder_id === item.funderId && log.status === 'sending' && log.provider_message_id);
+          return <tr key={item.funderId} className="border-t border-border align-top">
+            <td className="p-2"><input aria-label={`Select ${item.funderName}`} type="checkbox"
+              checked={selected.includes(item.funderId)} disabled={!selectable || pending || (!selected.includes(item.funderId) && selected.length >= 8)}
+              onChange={() => {
+                setConfirmed([]);
+                setSelected(current => current.includes(item.funderId) ? current.filter(id => id !== item.funderId) : [...current, item.funderId]);
+              }} /></td>
+            <td className="p-2 font-medium">{item.funderName}</td>
+            <td className="p-2">
+              {routing && <><span className={`rounded px-1.5 py-0.5 text-xs ${tones[routing.fit]}`}>{fitNames[routing.fit]}</span>
+                <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Guidelines</summary>
+                  <p className="py-1">{routing.summary}</p><ul className="list-disc pl-4">{routing.reasons.map((reason, index) => <li key={index}>{reason.message}</li>)}</ul>
+                </details>
+              </>}
+            </td>
+            <td className="p-2">{item.method.replaceAll('_',' ')}</td>
+            <td className="p-2 text-xs">
+              <p>{item.verifiedAt ? 'Destination verified' : 'Verify destination in Funder Master'}</p>
+              <p>{item.missingDocuments.length ? `Missing from package: ${item.missingDocuments.join(', ')}` : 'Required document types present'}</p>
+            </td>
+            <td className="p-2 text-xs">
+              {item.previousStatus === 'sending' ? 'In progress or needs reconciliation' : item.previousStatus ?? 'No submission'}
+              {reconcile && <button disabled={pending} type="button" className="block text-primary hover:underline"
+                onClick={() => run(async () => { await reconcileProcessingSubmission(dealId, reconcile.id); setNotice(['Tracker reconciled.']); })}>Update tracker from recorded evidence</button>}
+            </td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div>
+    {!sorted.length && <p className="text-sm text-muted-foreground">No active funders are configured.</p>}
+    {!!selected.length && <div className="space-y-2 rounded border border-border p-3">
+      <p className="text-sm font-medium">{selected.length} of 8 funders selected</p>
+      {!!documents.length && <details><summary className="cursor-pointer text-sm">Include additional documents in the selected packages</summary>
+        {documents.map(document => <label className="mt-1 flex gap-2 text-sm" key={document.id}>
+          <input type="checkbox" checked={extras.includes(document.id)} disabled={pending} onChange={() => {
+            setConfirmed([]);
+            setExtras(current => current.includes(document.id) ? current.filter(id => id !== document.id) : [...current, document.id]);
+          }} />{document.filename}
+        </label>)}
+      </details>}
+      <Button disabled={pending} onClick={() => run(async () => {
+        setPortalConfirmed(false);
+        setConfirmed(await previewProcessingSubmissions(input));
+      })}>Review selected packages</Button>
+    </div>}
+    {!!confirmed.length && <div className="space-y-3 rounded border border-border bg-muted/30 p-3">
+      <h3 className="font-semibold">Authorize reviewed packages</h3>
+      {confirmed.map(item => <details open key={item.funderId} className="space-y-1 rounded bg-card p-3 text-sm">
+        <summary className="cursor-pointer font-medium">{item.funderName}</summary>
+        {isPortal(item.method) && item.portalUrl ? <a className="block text-primary underline" href={item.portalUrl} target="_blank" rel="noopener noreferrer">Open verified portal</a>
+          : <p>To {item.to}{item.cc && ` · CC ${item.cc}`}{item.bcc && ` · BCC ${item.bcc}`}</p>}
+        <p className="font-medium">{item.subject}</p>
+        <p className="whitespace-pre-wrap break-words text-xs">{item.body}</p>
+        <ul className="text-xs">{item.attachments.map(document => <li key={document.id}>
+          <Link prefetch={false} className="text-primary underline" href={`/api/deal-files/${document.id}`}>{document.filename}</Link>
+        </li>)}</ul>
+        {!!item.missingDocuments.length && <p className="text-red-900">Missing {item.missingDocuments.join(', ')}</p>}
+      </details>)}
+      <label className="grid gap-1 text-sm">Review note for MAYBE recommendations
+        <textarea value={review} maxLength={500} onChange={event => setReview(event.target.value)} className="rounded border border-border p-2" />
+      </label>
+      {hasPortal && <label className="flex gap-2 text-sm"><input type="checkbox" checked={portalConfirmed}
+        onChange={event => setPortalConfirmed(event.target.checked)} /> I completed each selected portal submission manually</label>}
+      <Button disabled={pending || !canConfirm} onClick={() => run(async () => {
+        const results = await sendProcessingSubmissions(input, confirmed.map(item => ({ id: item.funderId, key: item.confirmationKey })), review, portalConfirmed);
+        setNotice(results.map(result => `${result.funderName} · ${result.message}`));
+        setConfirmed([]);
+        setSelected([]);
+        setReview('');
+        setExtras([]);
+      })}>{pending ? 'Working…' : 'Confirm selected submissions'}</Button>
+    </div>}
   </Card>;
 }

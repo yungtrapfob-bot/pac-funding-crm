@@ -47,7 +47,7 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
   const active = effectiveFunders.filter(funder => funder.is_active);
   const emailMissing = active.filter(funder => funder.submission_method === 'email' && !funder.primary_submission_email).length;
   const methodMissing = active.filter(funder => funder.submission_method === 'tbd').length;
-  const portalMissing = active.filter(funder => ['portal','manual_portal'].includes(funder.submission_method) && !funder.submission_endpoint).length;
+  const portalMissing = active.filter(funder => ['portal','manual_portal'].includes(funder.submission_method) && !funder.portal_url).length;
   const guidelinesMissing = active.filter(funder => !funder.positions || !funder.states || !funder.required_docs).length;
 
   return (
@@ -74,12 +74,15 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
               <select name="submission_method" defaultValue={String(funder.submission_method ?? 'tbd')} className="rounded-md border px-2 py-1"><option value="email">Email</option><option value="api">API</option><option value="portal">Portal</option><option value="manual_portal">Manual Portal</option><option value="tbd">TBD</option></select>
               <input name="primary_submission_email" defaultValue={funder.primary_submission_email ?? ''} placeholder="Primary submission email" className="rounded-md border px-2 py-1" />
               <input name="submission_cc" defaultValue={funder.submission_cc ?? ''} placeholder="CC" className="rounded-md border px-2 py-1" />
+              <input name="portal_url" type="url" aria-label="HTTPS portal URL" defaultValue={funder.portal_url ?? ''} placeholder="HTTPS portal URL" className="rounded-md border px-2 py-1" />
               <input name="submission_bcc" defaultValue={funder.submission_bcc ?? ''} placeholder="BCC" className="rounded-md border px-2 py-1" />
               <input name="subject_template" defaultValue={funder.subject_template ?? 'Submission: {{business_name}} - {{requested_amount}} - {{state}}'} className="rounded-md border px-2 py-1 md:col-span-2" />
               <input name="required_document_types" defaultValue={(funder.required_document_types ?? ['application','statement']).join(', ')} className="rounded-md border px-2 py-1 md:col-span-2" />
               <textarea name="body_template" defaultValue={funder.body_template ?? ''} className="min-h-24 rounded-md border px-2 py-1 md:col-span-2" />
               <textarea name="internal_submission_notes" defaultValue={funder.internal_submission_notes ?? ''} placeholder="Internal submission notes" className="min-h-24 rounded-md border px-2 py-1 md:col-span-2" />
               <label className="flex items-center gap-2"><input type="checkbox" name="is_active" defaultChecked={funder.is_active !== false} /> Active</label>
+              <label className="flex items-center gap-2 md:col-span-2"><input type="checkbox" name="verify_destination" /> Independently verified the destination and recipients</label>
+              <p className="text-xs text-muted-foreground">{funder.verified_at ? 'Destination was verified. Verify again when saving changes.' : 'Destination has not been verified.'}</p>
               <button className="rounded-md bg-primary px-3 py-2 text-primary-foreground" type="submit" disabled={funder.configurationAmbiguous}>Save config</button>
             </form></details>
           ))}
