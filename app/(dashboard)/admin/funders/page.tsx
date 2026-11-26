@@ -48,7 +48,8 @@ export default async function AdminFundersPage({ searchParams: pendingSearchPara
   const emailMissing = active.filter(funder => funder.submission_method === 'email' && !funder.primary_submission_email).length;
   const methodMissing = active.filter(funder => funder.submission_method === 'tbd').length;
   const portalMissing = active.filter(funder => ['portal','manual_portal'].includes(funder.submission_method) && !funder.portal_url).length;
-  const guidelinesMissing = active.filter(funder => !funder.positions || !funder.states || !funder.required_docs).length;
+  const missing = (value: string | null) => !value?.trim() || /^(unknown|not specified|not stated|n\/a)$/i.test(value.trim());
+  const guidelinesMissing = active.filter(funder => [funder.positions,funder.states,funder.required_docs].some(missing)).length;
 
   return (
     <div className="space-y-6">

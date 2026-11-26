@@ -7,7 +7,7 @@ import { Card } from '@/components/ui/card';
 import Link from 'next/link';
 
 type Preview = Awaited<ReturnType<typeof previewProcessingSubmissions>>[number];
-type Routing = { funderId?: string; fit: string; summary: string; reasons: { message: string }[] };
+type Routing = { funderId?: string; fit: string; summary: string; reasons: { message: string }[]; guidelines: { label: string; value: string }[] };
 type Document = { id: string; fileType: string | null; filename: string };
 type History = { id: string; funder_id: string; status: string; provider_message_id: string | null };
 
@@ -84,6 +84,9 @@ export function FunderSubmissionsWorkspace({ dealId, previews, routingResults, d
               {routing && <><span className={`rounded px-1.5 py-0.5 text-xs ${tones[routing.fit]}`}>{fitNames[routing.fit]}</span>
                 <details className="mt-1 text-xs"><summary className="cursor-pointer text-primary">Guidelines</summary>
                   <p className="py-1">{routing.summary}</p><ul className="list-disc pl-4">{routing.reasons.map((reason, index) => <li key={index}>{reason.message}</li>)}</ul>
+                  <dl className="mt-2 space-y-1">{routing.guidelines.map(item => <div key={item.label}>
+                    <dt className="font-medium">{item.label}</dt><dd className="break-words text-muted-foreground">{item.value}</dd>
+                  </div>)}</dl>
                 </details>
               </>}
             </td>
@@ -93,7 +96,7 @@ export function FunderSubmissionsWorkspace({ dealId, previews, routingResults, d
               <p>{item.missingDocuments.length ? `Missing from package: ${item.missingDocuments.join(', ')}` : 'Required document types present'}</p>
             </td>
             <td className="p-2 text-xs">
-              {item.previousStatus === 'sending' ? 'In progress or needs reconciliation' : item.previousStatus ?? 'No submission'}
+              {item.previousStatus === 'sending' ? 'In progress or needs reconciliation' : item.previousStatus === 'sent' ? (isPortal(item.method) ? 'Portal recorded' : 'Provider accepted') : item.previousStatus ?? 'No submission'}
               {reconcile && <button disabled={pending} type="button" className="block text-primary hover:underline"
                 onClick={() => run(async () => { await reconcileProcessingSubmission(dealId, reconcile.id); setNotice(['Tracker reconciled.']); })}>Update tracker from recorded evidence</button>}
             </td>

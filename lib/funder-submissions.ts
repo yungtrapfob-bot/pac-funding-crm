@@ -54,7 +54,7 @@ export function selectedPackageFiles(files: FileRow[], extraIds: string[] = []) 
 
 export function originalFilename(path: string) {
   const leaf = path.split('/').pop() ?? path;
-  return leaf.replace(/^\d+-\d+-/, '');
+  return leaf.replace(/^(?:[0-9a-f-]{36}-|\d+-\d+-)/i, '');
 }
 
 export function buildIdempotencyKey(dealId: string, funderId: string) {

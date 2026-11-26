@@ -26,7 +26,7 @@ export default async function ProcessingResponses({ searchParams }: {
   const visible = (replies.data as ReviewReply[]).filter(reply => !dealId || !reply.proposed_submission
     || entries.some(entry => entry.id === reply.proposed_submission && entry.dealId === dealId));
   return <div className="space-y-3">
-    <Link className="text-sm text-primary hover:underline" href={dealId ? `/deals/${dealId}?context=processing` : '/admin/processing'}>Back to processing</Link>
+    <Link className="text-sm text-primary hover:underline" href={dealId ? `/deals/${dealId}?context=processing&tab=tracker` : '/admin/processing'}>Back to processing</Link>
     <h1 className="text-2xl font-semibold">Funder response review</h1>
     <ProcessingReplyReview dealId={dealId} mode={mailboxMode()} replies={visible} submissions={entries} />
   </div>;

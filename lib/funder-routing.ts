@@ -65,6 +65,7 @@ export type RoutingResult = {
   minTimeInBusinessMonths: number | null;
   minFico: number | null;
   industrySummary: string;
+  guidelines: { label: string; value: string }[];
 };
 
 const clean = (value: string | null | undefined) => (value || '').trim().toLowerCase();
@@ -493,7 +494,16 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
       minRevenue: revenueMinimum,
       minTimeInBusinessMonths: f.min_time_in_business_months,
       minFico: f.min_fico,
-      industrySummary: industrySummary(f)
+      industrySummary: industrySummary(f),
+      guidelines: [
+        { label: 'Eligible positions', value: f.positions },
+        { label: 'States', value: f.states },
+        { label: 'Preferred industries', value: f.industry_yes },
+        { label: 'Conditional rules', value: f.industry_maybe },
+        { label: 'Prohibited industries', value: f.industry_no },
+        { label: 'Document requirements', value: f.required_docs },
+        { label: 'Notes', value: f.notes },
+      ].filter((item): item is { label: string; value: string } => !isBlankRule(item.value))
     };
   }).sort((a, b) => sortRank[a.fit] - sortRank[b.fit] || b.score - a.score || a.funderName.localeCompare(b.funderName));
 }

@@ -69,7 +69,7 @@ export default async function DealDetailPage({
   searchParams: pendingSearchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ saved?: string; context?: string; offer_error?: string; upload?: string }>;
+  searchParams: Promise<{ saved?: string; context?: string; tab?: string; offer_error?: string; upload?: string }>;
 }) {
   const [params, searchParams] = await Promise.all([pendingParams, pendingSearchParams]);
   const { profile } = await requireUser();
@@ -187,14 +187,78 @@ export default async function DealDetailPage({
   const reviewed = underwriting.data;
   const routingResults = evaluateProcessingFunders(funders, { ...deal, negative_days: reviewed?.negative_days, underwriting_reviewed: Boolean(reviewed) });
   const field = (value: string | number | null | undefined) => value == null ? '' : String(value);
+  const reviewedField = (value: number | null | undefined) => !reviewed && value === 0 ? '' : field(value);
   const financeValues = {
     requested: field(deal.requested_amount ?? (!reviewed ? requestedAmount : null)),
-    revenue: field(deal.monthly_revenue), balance: field(reviewed?.average_daily_balance), deposits: field(deal.deposits),
-    positions: field(deal.positions), fico: field(deal.fico && deal.fico >= 300 ? deal.fico : null),
-    nsfs: field(deal.nsf_count), negativeDays: field(reviewed?.negative_days), months: field(deal.time_in_business_months),
+    revenue: reviewedField(deal.monthly_revenue), balance: field(reviewed?.average_daily_balance), deposits: reviewedField(deal.deposits),
+    positions: reviewedField(deal.positions), fico: field(deal.fico && deal.fico >= 300 ? deal.fico : null),
+    nsfs: reviewedField(deal.nsf_count), negativeDays: field(reviewed?.negative_days), months: field(deal.time_in_business_months),
     industry: field(deal.industry), state: field(deal.state),
   };
   const workspaceClosed = Boolean(deal.archived_at) || ['lost','funded'].includes(queueStage);
+  const analysisStatus = ({ needs_review:'Needs review', analyzing:'Analyzing', complete:'Analysis complete', failed:'Analysis failed' } as Record<string,string>)[analyses.data?.[0]?.status ?? ''] ?? 'Analysis pending';
+  const financialPanel = isAdmin && <ProcessingFinancials key={deal.id} dealId={deal.id}
+    company={deal.business_name} initial={financeValues}
+    runs={(analyses.data ?? []).map(run => ({ ...run, summary: run.summary as FinancialSummary | null }))}
+    mode={analysisMode()} readOnly={workspaceClosed} />;
+  const submissionsPanel = isAdmin && <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults}
+    documents={selectedPackageFiles(fileRows, fileRows.map(file => file.id)).filter(file => !['application', 'statement'].includes(file.file_type ?? ''))
+      .map(file => ({ id: file.id, fileType: file.file_type, filename: originalFilename(file.path) }))}
+    history={(submissionLogs ?? []).map(log => ({ id: log.id, funder_id: log.funder_id, status: log.status, provider_message_id: log.provider_message_id }))}
+    mode={emailMode()} readOnly={workspaceClosed} />;
+  const repliesLink = <Link href={`/admin/processing/responses?deal=${deal.id}`} className="inline-block text-sm font-medium text-primary hover:underline">Review incoming funder replies</Link>;
+
+  if (isAdmin && openedFromProcessing) {
+    const activeTab = ['submissions','tracker'].includes(searchParams.tab ?? '') ? searchParams.tab : 'financials';
+    const tabs = { financials: 'Financial review', submissions: 'Recommendations and packages', tracker: 'Tracker and replies' };
+    const counts = { YES: 0, MAYBE: 0, NO: 0 };
+    for (const result of routingResults) counts[result.fit]++;
+    const displayRequest = Number(financeValues.requested);
+    const ready = Boolean(queue?.has_documents) && (!deal.application_review_required || Boolean(deal.application_reviewed_at));
+    return <div className="space-y-3" data-testid="processing-desk">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+        <Link className="text-primary hover:underline" href="/admin/processing">Back to processing queue</Link>
+        <Link className="text-primary hover:underline" href={`/deals/${deal.id}`}>Open full deal</Link>
+      </div>
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold">{deal.business_name}</h1>
+          <Badge>{dealStages[queueStage]}{deal.sales_test ? ' · Test record' : ''}</Badge>
+        </div>
+        <dl className="grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+          <div><dt className="text-xs text-muted-foreground">Assigned rep</dt><dd className="font-medium">{deal.assigned_rep?.full_name ?? 'Unassigned'}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Requested amount</dt><dd className="font-medium">{financeValues.requested && Number.isFinite(displayRequest) ? displayRequest.toLocaleString('en-US',{ style:'currency',currency:'USD' }) : 'Unknown'}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Documents</dt><dd className="font-medium">{ready ? 'Ready' : queue?.has_documents ? 'Review required' : 'Incomplete'}</dd></div>
+          <div><dt className="text-xs text-muted-foreground">Analysis</dt><dd className="font-medium">{analysisStatus}</dd></div>
+        </dl>
+      </Card>
+      <nav aria-label="Processing workspace" className="flex flex-wrap gap-2">
+        {Object.entries(tabs).map(([key,label]) => <Link key={key} aria-current={activeTab === key ? 'page' : undefined}
+          href={`/deals/${deal.id}?context=processing&tab=${key}`}
+          className="rounded-md border border-border bg-card px-3 py-2 text-sm font-medium aria-[current=page]:border-primary aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground">
+          {label}{key === 'submissions' && <span className="ml-2 whitespace-nowrap text-xs">GO {counts.YES} · MAYBE {counts.MAYBE} · NO {counts.NO}</span>}
+        </Link>)}
+      </nav>
+      {activeTab === 'financials' && <>
+        <details className="rounded-lg border border-border bg-card p-3 text-sm">
+          <summary className="cursor-pointer font-medium">Private documents · {fileRows.length}</summary>
+          <ul className="mt-2 space-y-1">{fileRows.map(file => <li key={file.id}>
+            <Link prefetch={false} className="text-primary hover:underline" href={`/api/deal-files/${file.id}`}>{originalFilename(file.path)}</Link>
+          </li>)}</ul>
+          {deal.application_review_required && !deal.application_reviewed_at && queue?.has_documents && !workspaceClosed
+            && <ApplicationDocumentReview id={deal.id} admin />}
+          {!fileRows.length && <p className="mt-1 text-muted-foreground">No documents uploaded.</p>}
+        </details>
+        {financialPanel}
+      </>}
+      {activeTab === 'submissions' && submissionsPanel}
+      {activeTab === 'tracker' && <Card className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="font-semibold">Funder response tracker</h2>{repliesLink}</div>
+        <FunderTracker id={deal.id} offers={offers ?? []} submissionLogs={submissionLogs ?? []} stage={dealStages[queueStage]} />
+      </Card>}
+    </div>;
+  }
+
 
   return (
     <div className="space-y-4">
@@ -329,20 +393,7 @@ export default async function DealDetailPage({
         </p>
       </Card>
 
-      {isAdmin ? (
-        <>
-          <ProcessingFinancials key={deal.id} dealId={deal.id}
-            company={deal.business_name} initial={financeValues}
-            runs={(analyses.data ?? []).map(run => ({ ...run, summary: run.summary as FinancialSummary | null }))}
-            mode={analysisMode()} readOnly={workspaceClosed} />
-          <Link href={`/admin/processing/responses?deal=${deal.id}`} className="inline-block text-sm text-primary hover:underline">Review incoming funder replies</Link>
-          <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults}
-            documents={selectedPackageFiles(fileRows, fileRows.map(file => file.id)).filter(file => !['application', 'statement'].includes(file.file_type ?? ''))
-              .map(file => ({ id: file.id, fileType: file.file_type, filename: originalFilename(file.path) }))}
-            history={(submissionLogs ?? []).map(log => ({ id: log.id, funder_id: log.funder_id, status: log.status, provider_message_id: log.provider_message_id }))}
-            mode={emailMode()} readOnly={workspaceClosed} />
-        </>
-      ) : null}
+      {isAdmin && <>{financialPanel}{submissionsPanel}{repliesLink}</>}
 
       <Card>
         <h2 className="mb-2 text-lg font-medium">Selected Offer</h2>

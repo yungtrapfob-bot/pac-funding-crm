@@ -30,10 +30,10 @@ export function ProcessingFinancials({ dealId, initial, company, runs, mode, rea
   const application = report?.application;
   const maximum = Math.max(1, ...(report?.months ?? []).map(month => month.qualifyingRevenue));
 
-  function work(operation: () => Promise<void>, success: string) {
+  function work(operation: () => Promise<{ ok: true } | { ok: false; message: string }>, success: string) {
     setMessage('');
     startTransition(async () => {
-      try { await operation(); setMessage(success); }
+      try { const result = await operation(); setMessage(result.ok ? success : result.message); }
       catch (error) { setMessage(error instanceof Error ? error.message : 'The request could not be completed.'); }
     });
   }

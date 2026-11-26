@@ -36,7 +36,7 @@ export default async function ProcessingQueue({ searchParams }: { searchParams: 
             <td className="pr-3">{row.requested_amount ? dollars.format(row.requested_amount) : '—'}</td>
             <td className="pr-3">{!row.has_documents ? 'Incomplete' : row.application_review_required && !row.application_reviewed_at
               ? 'Ready for document review' : 'Application and statements on file'}</td>
-            <td className="pr-3"><Link href={`/deals/${row.id}?context=processing#funder-submissions`} className="flex flex-wrap gap-1 hover:underline">
+            <td className="pr-3"><Link href={`/deals/${row.id}?context=processing&tab=submissions#funder-submissions`} className="flex flex-wrap gap-1 hover:underline">
               <span className="rounded bg-emerald-50 px-1 text-emerald-900">GO {row.counts.YES}</span>
               <span className="rounded bg-amber-50 px-1 text-amber-900">MAYBE {row.counts.MAYBE}</span>
               <span className="rounded bg-red-50 px-1 text-red-900">NO {row.counts.NO}</span>

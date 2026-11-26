@@ -16,8 +16,8 @@ export function routingInputs(deal: UnderwritingDeal) {
     timeInBusinessMonths: positive(deal.time_in_business_months),
     fico: positive(deal.fico),
     // The deal stores the number of existing positions. A new advance takes the next one.
-    positions: typeof deal.positions === 'number' && Number.isInteger(deal.positions) && deal.positions >= 0 ? deal.positions + 1 : null,
-    nsfCount: typeof deal.nsf_count === 'number' && deal.nsf_count >= 0 ? deal.nsf_count : null,
+    positions: typeof deal.positions === 'number' && Number.isInteger(deal.positions) && (deal.positions > 0 || Boolean(deal.underwriting_reviewed) && deal.positions === 0) ? deal.positions + 1 : null,
+    nsfCount: financial(deal.nsf_count),
     depositsPerMonth: financial(deal.deposits),
     negativeDays: deal.negative_days ?? null,
     state: deal.state?.trim() || null,

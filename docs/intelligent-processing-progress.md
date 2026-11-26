@@ -8,13 +8,13 @@ The owner supplied sections 1–20 after the initial checkpoint. This branch com
 | B. Submission workspace | Select individually approved recipients, render independent packages, verify identity and retry behavior, record confirmed email and assisted portal submissions in the existing tracker. | Checkpoint pushed after Chromium mock email, partial failure, portal, DIP and rep isolation tests |
 | C. Document analysis | Disabled external integrations, mock processing, deterministic calculations with evidence, reviewed inputs feeding routing. | Checkpoint pushed after synthetic PDF review, arithmetic, and permission tests |
 | D. Incoming responses | Mock ingestion, verified thread matching or review queue, reviewed and idempotent DIP updates. | Checkpoint pushed after synthetic reply import, deduplication and reviewed offer tests |
-| E. Release validation | Synthetic browser acceptance, screenshots, permission and failure tests, and ordered deployment instructions. | Pending |
+| E. Release validation | Synthetic browser acceptance, screenshots, permission and failure tests, and ordered deployment instructions. | Validated locally at 1280×800, 1440×900, and 1920×1080 |
 
 Production data, real submissions, and deployments are outside this development session.
 
 ## Inventory reconciliation
 
-The checked-in workbook export and disposable database each have 39 funder rows. The local master has 12 marked Email without a stored recipient, one marked Portal without a stored endpoint, and 26 with a TBD method. The local submission configuration table initially had no rows. These observations are from repository and local data, not live configuration. Production values should be reviewed in Funder Master. The workflow preserves existing funder UUIDs and associates legacy configuration by its normalized name key. Duplicate keys and unmatched configurations require an administrator to review them. No contacts or guidelines were inferred.
+The checked-in workbook export and disposable database each have 39 funder rows. The local master has 12 marked Email without a stored recipient, one marked Portal without a stored endpoint, and 26 with a TBD method. Nine funders had a missing or unspecified core position, state, or document guideline. There were no duplicate normalized keys in the baseline inventory. The local submission configuration table initially had no rows. These observations are from repository and local data, not live configuration. Production values should be reviewed in Funder Master. The workflow preserves existing funder UUIDs and associates legacy configuration by its normalized name key. Duplicate keys and unmatched configurations require an administrator to review them. No contacts or guidelines were inferred.
 
 ## Submission configuration
 
@@ -49,3 +49,14 @@ The checked-in workbook export and disposable database each have 39 funder rows.
 5. With owner approval, pause staff processing, back up production, repeat SQL checks and deployment, and verify authorization before resuming. Enable each external provider only after its own approval and controlled credential verification.
 
 If an application rollback is necessary, retain the additive tables and data. The new write restrictions intentionally prevent the old submission action from sending. Keep submissions paused and restore the matching release or follow the database recovery plan for the coordinated change. Do not relax permission restrictions to recover sending.
+
+## Release boundaries
+
+- Automated background analysis, mailbox polling, and portal submission APIs are outside this checkpoint. Analysis and mailbox imports start from explicit admin controls.
+- Offer extraction supports labeled basic terms in plain text. It does not analyze inbound attachments, unlabeled correspondence, origination fee, net funding, position, or early-payoff clauses automatically.
+- Routing reflects supported stored rules. Product variants, additional document requirements, and underwriting exceptions still require a processor to read the source guideline.
+- Synthetic fixtures verify arithmetic and evidence handling. They do not establish model accuracy on real bank statements, real sender identity, or delivery to business inboxes.
+
+## Validation recorded
+
+The local run passed lint, type checking, the production build, all 14 routing, arithmetic, provider and reporting tests, and the full Chromium sales acceptance suite with mock processing enabled. Chromium covered missing and unreadable PDFs, corrected financials, authorized packages, a rejected recipient during a partially successful batch, portal confirmation, duplicate imports, approved and declined offer writes, rep isolation, and existing commission behavior. The production-compatible schema was replayed in a separate local database with consolidated preflight and verification results and the SQL permissions suite. All visual examples contain synthetic merchant data.
