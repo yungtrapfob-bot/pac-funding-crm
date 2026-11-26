@@ -37,6 +37,7 @@ export type DealRoutingInput = {
   fico: number | null;
   positions: number | null;
   nsfCount: number | null;
+  negativeDays?: number | null;
   depositsPerMonth: number | null;
   state: string | null;
   industry: string | null;
@@ -380,7 +381,8 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
     const tibMinimum = timeInBusinessRule(f, deal.industry);
     const minFico = ficoRule(f, deal.industry, deal.positions);
     const nsfRule = f.matrix_row['Max NSFs/Neg Days'];
-    const maxNsf = /neg(?:ative)?[ .-]*days?/i.test(nsfRule ?? '') ? null : maxNsfRule(nsfRule);
+    const negativeOnly = /neg(?:ative)?[ .-]*days?/i.test(nsfRule ?? '') && !/nsf/i.test(nsfRule ?? '');
+    const maxNsf = !negativeOnly && /neg(?:ative)?[ .-]*days?/i.test(nsfRule ?? '') ? null : maxNsfRule(nsfRule);
     const minDeposits = minDepositRule(f.matrix_row['Min Deposits/Month'], deal.industry);
     const maxFunding = maxFundingRule(f, deal.positions);
 
@@ -415,11 +417,11 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
     ));
 
     reasons.push(numericDecision(
-      'NSF',
-      deal.nsfCount,
+      negativeOnly ? 'Negative days' : 'NSF',
+      negativeOnly ? deal.negativeDays ?? null : deal.nsfCount,
       maxNsf,
-      (value) => `NSFs within ${value} max.`,
-      (value) => `NSFs exceed ${value} max.`,
+      (value) => `${negativeOnly ? 'Negative days' : 'NSFs'} within ${value} max.`,
+      (value) => `${negativeOnly ? 'Negative days' : 'NSFs'} exceed ${value} max.`,
       'No NSF/negative-day cap in matrix.',
       (dealValue, ruleValue) => dealValue <= ruleValue
     ));
@@ -462,7 +464,7 @@ export function evaluateFunders(funders: FunderMasterRecord[], deal: DealRouting
     if (conditionalProduct) {
       reasons.push({ status: 'warn', message: 'Confirm the applicable funder product before submitting.' });
       // Numeric ranges from different products cannot establish a hard rejection.
-      for (const reason of reasons) if (reason.status === 'fail' && /Revenue|TIB|FICO|NSF|Deposits|Request/.test(reason.message)) {
+      for (const reason of reasons) if (reason.status === 'fail' && /Revenue|TIB|FICO|NSF|Negative days|Deposits|Request/.test(reason.message)) {
         reason.status = 'warn';
       }
     }

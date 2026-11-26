@@ -28,3 +28,29 @@ test('processing flags unknown evidence and respects definitive exclusions', () 
   const variant = { ...funder, states: 'All except special rule: no home-based in CA', matrix_row: { ...funder.matrix_row, 'Max NSFs/Neg Days': 'Max 5 negative days' } };
   assert.equal(evaluateProcessingFunders([variant], { ...deal, nsf_count: 9 })[0].fit, 'MAYBE');
 });
+
+test('statement arithmetic excludes transfers and refuses unproven balances', async () => {
+  const { documentFacts, summarizeFinancialFacts } = await import('../lib/document-analysis.ts');
+  const statement = {
+    file: 1, start: '2026-07-01', end: '2026-07-03', account_tag: 'sample',
+    opening: 10000, closing: 9000, complete: true, rows: [
+      { date: '2026-07-01', amount: -11000, page: 1, category: 'mca_suspected', descriptor: 'Synthetic ACH' },
+      { date: '2026-07-02', amount: 5000, page: 1, category: 'transfer', descriptor: null },
+      { date: '2026-07-03', amount: 5000, page: 1, category: 'operating', descriptor: null },
+    ],
+  };
+  const report = summarizeFinancialFacts(documentFacts.parse({
+    application: null, statements: [statement, { ...statement, file: 2 }], flags: [],
+  }));
+  assert.equal(report.months.length, 1);
+  assert.ok(report.flags.includes('Duplicate statement'));
+  assert.equal(report.months[0].deposits, 10000);
+  assert.equal(report.months[0].qualifyingRevenue, 5000);
+  assert.equal(report.months[0].negativeDays, 1);
+  assert.equal(report.averages.dailyBalance, 4000);
+  const invalid = summarizeFinancialFacts(documentFacts.parse({ application: null,
+    statements: [{ ...statement, closing: 10000 }], flags: [] }));
+  assert.equal(invalid.months[0].negativeDays, null);
+  assert.equal(invalid.months[0].averageBalance, null);
+  assert.equal(invalid.averages, null);
+});

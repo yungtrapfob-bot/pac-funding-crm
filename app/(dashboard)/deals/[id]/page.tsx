@@ -1,3 +1,6 @@
+import { ProcessingFinancials } from '@/components/deals/processing-financials';
+import { analysisMode } from '@/lib/document-analysis-provider';
+import type { FinancialSummary } from '@/lib/document-analysis';
 import { emailMode } from '@/lib/email-provider';
 import { originalFilename, selectedPackageFiles } from '@/lib/funder-submissions';
 import { readFunderInventory } from '@/lib/funder-inventory';
@@ -176,7 +179,22 @@ export default async function DealDetailPage({
   const requestedAmount = extractRequestedAmountFromInternalNotes(
     deal.internal_notes,
   );
-  const routingResults = evaluateProcessingFunders(funders, deal);
+  const [underwriting, analyses] = isAdmin ? await Promise.all([
+    supabase.from('processing_underwriting').select('average_daily_balance,negative_days').eq('deal_id',deal.id).maybeSingle(),
+    supabase.from('processing_document_analyses').select('id,status,summary,document_ids,version,created_at')
+      .eq('deal_id',deal.id).order('created_at',{ ascending:false }).limit(10),
+  ]) : [{ data: null }, { data: [] }];
+  const reviewed = underwriting.data;
+  const routingResults = evaluateProcessingFunders(funders, { ...deal, negative_days: reviewed?.negative_days, underwriting_reviewed: Boolean(reviewed) });
+  const field = (value: string | number | null | undefined) => value == null ? '' : String(value);
+  const financeValues = {
+    requested: field(deal.requested_amount ?? (!reviewed ? requestedAmount : null)),
+    revenue: field(deal.monthly_revenue), balance: field(reviewed?.average_daily_balance), deposits: field(deal.deposits),
+    positions: field(deal.positions), fico: field(deal.fico && deal.fico >= 300 ? deal.fico : null),
+    nsfs: field(deal.nsf_count), negativeDays: field(reviewed?.negative_days), months: field(deal.time_in_business_months),
+    industry: field(deal.industry), state: field(deal.state),
+  };
+  const workspaceClosed = Boolean(deal.archived_at) || ['lost','funded'].includes(queueStage);
 
   return (
     <div className="space-y-4">
@@ -313,11 +331,15 @@ export default async function DealDetailPage({
 
       {isAdmin ? (
         <>
+          <ProcessingFinancials key={deal.id} dealId={deal.id}
+            company={deal.business_name} initial={financeValues}
+            runs={(analyses.data ?? []).map(run => ({ ...run, summary: run.summary as FinancialSummary | null }))}
+            mode={analysisMode()} readOnly={workspaceClosed} />
           <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults}
             documents={selectedPackageFiles(fileRows, fileRows.map(file => file.id)).filter(file => !['application', 'statement'].includes(file.file_type ?? ''))
               .map(file => ({ id: file.id, fileType: file.file_type, filename: originalFilename(file.path) }))}
             history={(submissionLogs ?? []).map(log => ({ id: log.id, funder_id: log.funder_id, status: log.status, provider_message_id: log.provider_message_id }))}
-            mode={emailMode()} readOnly={Boolean(deal.archived_at) || ['lost','funded'].includes(queueStage)} />
+            mode={emailMode()} readOnly={workspaceClosed} />
         </>
       ) : null}
 

@@ -21,17 +21,18 @@ async function loadPackages(input: z.input<typeof inputSchema>) {
   const { dealId, targets } = inputSchema.parse(input);
   if (new Set(targets.map(t => t.id)).size !== targets.length) throw new Error('Select each funder once.');
   const supabase = await createClient();
-  const [{ data: deal, error: dealError }, { funders }, { data: files, error: fileError }, { data: logs, error: logError }] = await Promise.all([
+  const [{ data: deal, error: dealError }, { funders }, { data: files, error: fileError }, { data: logs, error: logError }, underwriting] = await Promise.all([
     supabase.from('deals').select('*, assigned_rep:assigned_rep_id(full_name)').eq('id', dealId).single(),
     readFunderInventory(supabase),
     supabase.from('deal_files').select('*').eq('deal_id', dealId).order('id'),
     supabase.from('funder_submission_logs').select('*').eq('deal_id', dealId).order('submitted_at', { ascending: false }),
+    supabase.from('processing_underwriting').select('negative_days').eq('deal_id',dealId).maybeSingle(),
   ]);
-  if (dealError || !deal || fileError || logError) throw new Error('The deal or its submission data is unavailable.');
+  if (dealError || !deal || fileError || logError || underwriting.error) throw new Error('The deal or its submission data is unavailable.');
   if (deal.archived_at || deal.sales_lost || ['Funded','Killed','KIF'].includes(deal.current_stage)) {
     throw new Error('This deal is closed for submissions.');
   }
-  const fitById = new Map(evaluateProcessingFunders(funders, deal).map(result => [result.funderId, result.fit]));
+  const fitById = new Map(evaluateProcessingFunders(funders, { ...deal, negative_days: underwriting.data?.negative_days, underwriting_reviewed: Boolean(underwriting.data) }).map(result => [result.funderId, result.fit]));
   const packages = targets.map(target => {
     const funder = funders.find(row => row.id === target.id);
     if (!funder || !funder.is_active || funder.configurationAmbiguous) throw new Error('A selected funder is unavailable.');

@@ -8,4 +8,10 @@ select 'Submission evidence finalization restricted to service',
   case when coalesce(has_function_privilege('service_role',to_regprocedure('public.crm_complete_processing_submission(uuid,text,uuid,uuid)'),'EXECUTE'),false)
     and not coalesce(has_function_privilege('authenticated',to_regprocedure('public.crm_complete_processing_submission(uuid,text,uuid,uuid)'),'EXECUTE'),true)
     and not coalesce(has_table_privilege('authenticated',to_regclass('public.funder_submission_logs'),'INSERT,UPDATE,DELETE'),true)
+  then 'PASS' else 'FAIL' end
+union all
+select 'Admin-only underwriting review and analysis history',
+  case when exists(select from pg_class where oid=to_regclass('public.processing_document_analyses') and relrowsecurity)
+    and not coalesce(has_table_privilege('authenticated',to_regclass('public.processing_document_analyses'),'INSERT,UPDATE,DELETE'),true)
+    and to_regprocedure('public.crm_save_processing_underwriting(uuid,uuid,jsonb)') is not null
   then 'PASS' else 'FAIL' end;

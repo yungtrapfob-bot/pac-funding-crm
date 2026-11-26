@@ -198,6 +198,24 @@ try {
       }));
     }
     await admin.reload();
+    if (process.env.PROCESSING_ANALYSIS_PROVIDER === 'mock') {
+      const finance = admin.locator('#processing-financials');
+      await finance.getByRole('button', { name:'Analyze documents', exact:true }).click();
+      await finance.getByText('Needs review · Provider mock', { exact:true }).waitFor();
+      assert.equal(await finance.getByLabel('Monthly qualifying revenue').inputValue(), '0');
+      await finance.getByRole('button', { name:'Load extracted suggestions' }).click();
+      assert.equal(await finance.getByLabel('Monthly qualifying revenue').inputValue(), '1500');
+      await finance.getByLabel('Monthly qualifying revenue').fill('1525');
+      await finance.getByRole('button', { name:'Approve analysis and save' }).click();
+      await finance.getByText('Analysis complete · Provider mock', { exact:true }).waitFor();
+      assert.equal(must(await service.from('deals').select('monthly_revenue').eq('id',deal).single()).monthly_revenue,1525);
+      const owner = await session(opener.email);
+      assert.equal(must(await owner.client.from('processing_document_analyses').select('id').eq('deal_id',deal)).length,0);
+      assert.ok((await owner.client.rpc('crm_save_processing_underwriting', { target_deal:deal, analysis_id:null, inputs:{} })).error);
+      await admin.setViewportSize({width:1440,height:900});
+      await finance.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','processing-financial-review.png')});
+      console.log('PASS document review, deterministic extraction summary, corrected inputs and rep isolation.');
+    }
     const workspace = admin.locator('#funder-submissions');
     for (const target of configured) {
       await workspace.getByRole('checkbox', { name: `Select qa-processing-${nonce}-${target.suffix}`, exact:true }).check();

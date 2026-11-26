@@ -34,10 +34,14 @@ export async function getProcessingQueue(stage?: string) {
   const ids = items.map(row => row.id);
   for (let offset = 0; offset < ids.length; offset += 100) {
     const { data, error } = await supabase.from('deals')
-      .select('id,monthly_revenue,time_in_business_months,fico,positions,nsf_count,deposits,state,industry,requested_amount,internal_notes')
+      .select('id,monthly_revenue,time_in_business_months,fico,positions,nsf_count,deposits,state,industry,requested_amount,internal_notes,processing_underwriting(negative_days)')
       .in('id', ids.slice(offset, offset + 100));
     if (error) throw new Error('Processing deal inputs are unavailable.');
-    for (const deal of data) deals.set(deal.id, deal);
+    for (const deal of data) {
+      const linked = deal.processing_underwriting;
+      const review = Array.isArray(linked) ? linked[0] : linked;
+      deals.set(deal.id, { ...deal, negative_days: review?.negative_days, underwriting_reviewed: Boolean(review) });
+    }
   }
   return items.map(row => {
     const counts = { YES: 0, MAYBE: 0, NO: 0 };
