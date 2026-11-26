@@ -63,6 +63,10 @@ try {
     makeRep('opener'),makeRep('another'),makeRep('third'),makeRep('closer'),makeRep('inactive',false)
   ]);
   const rep = await signIn(opener.email);
+  const emptyPerformance = rep.getByTestId('rep-performance-cards');
+  await emptyPerformance.getByRole('heading', { name: 'Completed applications' }).waitFor();
+  assert.equal(await emptyPerformance.getByText('N/A', { exact: true }).count(), 3);
+  assert.equal(await emptyPerformance.getByText('$0.00', { exact: true }).count(), 3);
   const stranger = await session(another.email);
   const inactive = await session(disabled.email);
   const name = `Merchant QA ${nonce}`;
@@ -205,6 +209,44 @@ try {
   const kinds=must(await service.from('crm_sales_events').select('kind').eq('deal_id',deal)).map(e=>e.kind);
   assert.equal(kinds.filter(k=>k==='approved').length,1);
   for (const key of ['application_completed','submitted','approved','pitched','contracts_out','contracts_signed','funded']) assert.ok(kinds.includes(key),key);
+  await rep.goto(base + '/dashboard');
+  const pipelineCards = rep.getByTestId('rep-pipeline-cards').locator('article');
+  const performanceCards = rep.getByTestId('rep-performance-cards').locator('article');
+  assert.deepEqual(await pipelineCards.locator('h3').allTextContents(), ['Interested leads', 'Processing', 'Decisions', 'Final outcomes']);
+  assert.deepEqual(await performanceCards.locator('h3').allTextContents(), ['Completed applications', 'Approved volume', 'Funded volume', 'Earned commission']);
+  assert.equal(await performanceCards.nth(0).getByText('1', { exact: true }).count(), 1);
+  assert.equal(await performanceCards.nth(1).getByText('$22,000.00', { exact: true }).count(), 1);
+  assert.equal(await performanceCards.nth(1).getByRole('link', { name: /Approved units, 1/ }).count(), 1);
+  assert.equal(await performanceCards.nth(1).getByRole('link', { name: /App-to-approval, 100%/ }).count(), 1);
+  assert.equal(await performanceCards.nth(2).getByText('$21,000.00', { exact: true }).count(), 1);
+  assert.equal(await performanceCards.nth(2).getByRole('link', { name: /Funded units, 1/ }).count(), 1);
+  assert.equal(await performanceCards.nth(2).getByRole('link', { name: /Approval-to-funding, 100%/ }).count(), 1);
+  assert.equal(await performanceCards.nth(3).getByText('$420.00', { exact: true }).count(), 1);
+  assert.equal(await performanceCards.nth(3).getByRole('link', { name: /App-to-funding, 100%/ }).count(), 1);
+  for (const [width, height] of [[1280,800], [1440,900], [1920,1080]]) {
+    await rep.setViewportSize({ width, height });
+    const boxes = await pipelineCards.evaluateAll(cards => cards.map(card => {
+      const { y, width, height } = card.getBoundingClientRect();
+      return { y, width, height };
+    }));
+    assert.equal(boxes.length, 4);
+    assert.ok(boxes.every(box => box.y === boxes[0].y && box.height === boxes[0].height && Math.abs(box.width - boxes[0].width) < 1));
+    if (width === 1440) await rep.screenshot({ path: join(process.env.QA_SCREENSHOT_DIR ?? '/tmp', 'rep-dashboard-pipeline-polish.png'), fullPage: true });
+  }
+  await rep.setViewportSize({ width: 700, height: 900 });
+  const mobileRows = await pipelineCards.evaluateAll(cards => cards.map(card => card.getBoundingClientRect().y));
+  assert.equal(new Set(mobileRows).size, 2);
+  await rep.setViewportSize({ width: 1440, height: 900 });
+  await performanceCards.nth(1).getByRole('link', { name: /Approved volume/ }).click();
+  await rep.locator('#dashboard-records').getByRole('link', { name, exact: true }).waitFor();
+  assert.equal(await rep.locator('#dashboard-records li').count(), 1);
+  const otherDashboard = await signIn(another.email);
+  await otherDashboard.goto(base + '/dashboard?records=approved-volume#dashboard-records');
+  await otherDashboard.locator('#dashboard-records').getByText('No records in this view.').waitFor();
+  assert.equal(await otherDashboard.getByText(name, { exact: true }).count(), 0);
+  assert.equal(await otherDashboard.getByText('$420.00', { exact: true }).count(), 0);
+  await otherDashboard.context().close();
+  console.log('PASS rep dashboard totals, monthly cohorts, authorized drill-down, privacy and responsive layout.');
   await rep.goto(base+'/performance');
   await rep.getByRole('heading',{name:'My performance'}).waitFor();
   await admin.goto(base+'/admin');
