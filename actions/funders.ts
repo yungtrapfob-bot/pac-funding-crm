@@ -47,7 +47,7 @@ export async function updateFunderSubmissionConfig(formData: FormData) {
     body_template: String(formData.get('body_template') ?? '').trim(),
     required_document_types: required_document_types.length ? required_document_types : ['application', 'statement'],
     internal_submission_notes: String(formData.get('internal_submission_notes') ?? '').trim() || null,
-    is_active: formData.get('is_active') === 'on',
+    is_active: master.masterActive && formData.get('is_active') === 'on',
     updated_at: new Date().toISOString()
   }, { onConflict: 'funder_key' });
 

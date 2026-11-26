@@ -63,6 +63,7 @@ export async function sendProcessingSubmissions(
   const actorSession = z.guid().safeParse(claims?.claims?.session_id);
   if (!actorSession.success) throw new Error('Sign in again before authorizing a submission.');
   const admin = createAdminClient();
+  const mode = emailMode();
   const results = [];
   for (const { preview, selected, previous, fit } of packages) {
     const portal = ['portal', 'manual_portal'].includes(preview.method);
@@ -71,9 +72,9 @@ export async function sendProcessingSubmissions(
     else if (fit === 'NO') message = 'A mandatory guideline blocks submission.';
     else if (fit === 'MAYBE' && !note) message = 'Document the discretionary review before submitting.';
     else if (!preview.verifiedAt || preview.missingDocuments.length || (deal.application_review_required && !deal.application_reviewed_at)) message = 'Verify the destination and review required documents first.';
-    else if (portal ? !portalConfirmed || !preview.portalUrl : preview.method !== 'email' || !preview.to || emailMode() === 'disabled') message = 'This submission method is unavailable or lacks confirmation.';
-    else if (!portal && emailMode() === 'resend' && deal.sales_test) message = 'Test records cannot use live delivery.';
-    else if (!portal && emailMode() === 'test' && !deal.sales_test) message = 'Test email requires a synthetic deal marked as a test record.';
+    else if (portal ? !portalConfirmed || !preview.portalUrl : preview.method !== 'email' || !preview.to || mode === 'disabled') message = 'This submission method is unavailable or lacks confirmation.';
+    else if (!portal && mode === 'resend' && deal.sales_test) message = 'Test records cannot use live delivery.';
+    else if (!portal && (mode === 'test' || mode === 'resend-pilot') && !deal.sales_test) message = 'Test email requires a synthetic deal marked as a test record.';
     else {
       const payload = {
         deal_id: deal.id, funder_id: preview.funderId, funder_name: preview.funderName,
@@ -105,7 +106,7 @@ export async function sendProcessingSubmissions(
             log_id: entry.id, evidence_id: evidence, actor_id: profile.id, actor_session_id: actorSession.data,
           });
           if (finalError) throw new Error('Could not update the tracker.');
-          message = portal ? 'Portal submission recorded.' : emailMode() === 'test' ? 'Mock provider accepted.' : 'Provider accepted. Delivery is tracked by the provider.';
+          message = portal ? 'Portal submission recorded.' : mode === 'test' ? 'Mock provider accepted.' : 'Provider accepted. Delivery is tracked by the provider.';
         } catch (error) {
           const safeRetry = !portal && (!providerStarted || error instanceof EmailRejected);
           await admin.from('funder_submission_logs').update({

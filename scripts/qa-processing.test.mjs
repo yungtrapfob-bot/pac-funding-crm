@@ -89,3 +89,41 @@ test('live email stays disabled without opt-in and uncertain transport is distin
   fetch.mock.mockImplementation(async () => Response.json({id:'synthetic-message'}));
   assert.deepEqual(await provider.sendEmail(payload),{messageId:'synthetic-message'});
 });
+
+test('Resend pilot stays preview-only and enforces the single test recipient', async t => {
+  const { emailMode, getEmailProvider, EmailRejected } = await import('../lib/email-provider.ts');
+  const config = {
+    FUNDER_EMAIL_PROVIDER: 'resend-pilot',
+    FUNDER_EMAIL_REPLY_TO: 'processing@example.test',
+    FUNDER_EMAIL_FROM: 'sender@example.test',
+    FUNDER_SUBMISSION_TEST_RECIPIENT: 'recipient@example.test',
+    RESEND_API_KEY: 'synthetic',
+    VERCEL_ENV: 'production',
+  };
+  const saved = Object.fromEntries(Object.keys(config).map(key => [key, process.env[key]]));
+  t.after(() => {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+  Object.assign(process.env, config);
+  assert.equal(emailMode(), 'disabled');
+  process.env.VERCEL_ENV = 'preview';
+  const provider = getEmailProvider();
+  const send = t.mock.method(globalThis, 'fetch', async () => Response.json({ id: 'fixture-email' }));
+  const payload = { to: config.FUNDER_SUBMISSION_TEST_RECIPIENT, subject: 'Synthetic', body: 'Test', attachments: [
+    { filename: 'test.pdf', bytes: new TextEncoder().encode('synthetic PDF').buffer },
+  ], idempotencyKey: 'pilot-fixture' };
+  await assert.rejects(provider.sendEmail({ ...payload, to: 'other@example.test' }), EmailRejected);
+  await assert.rejects(provider.sendEmail({ ...payload, cc: 'other@example.test' }), EmailRejected);
+  await assert.rejects(provider.sendEmail({ ...payload, bcc: 'other@example.test' }), EmailRejected);
+  assert.equal(send.mock.callCount(), 0);
+  assert.deepEqual(await provider.sendEmail(payload), { messageId: 'fixture-email' });
+  const [, request] = send.mock.calls[0].arguments;
+  assert.equal(request.headers['Idempotency-Key'], payload.idempotencyKey);
+  const body = JSON.parse(request.body);
+  assert.equal(body.reply_to, config.FUNDER_EMAIL_REPLY_TO);
+  assert.deepEqual(body.to, [payload.to]);
+  assert.equal(Buffer.from(body.attachments[0].content, 'base64').toString(), 'synthetic PDF');
+});
