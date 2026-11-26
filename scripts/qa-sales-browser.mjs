@@ -243,6 +243,38 @@ try {
     await workspace.getByRole('checkbox', { name: `Select qa-processing-${nonce}-email`, exact:true }).isDisabled().then(assert.ok);
     await admin.setViewportSize({width:1440,height:900});
     await admin.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','processing-submissions.png'),fullPage:true});
+    if (process.env.PROCESSING_MAILBOX_PROVIDER === 'mock') {
+      await admin.goto(base + '/admin/processing/responses?deal=' + deal);
+      const importButton = admin.getByRole('button', { name:'Import funder replies' });
+      await importButton.click();
+      await admin.getByRole('status').getByText(/Examined 2 messages/).waitFor();
+      await importButton.click();
+      await admin.getByRole('status').getByText(/Examined 2 messages/).waitFor();
+      const mockRows = must(await service.from('processing_funder_responses').select('id,proposal,status').in('proposed_submission',logs.map(row => row.id)));
+      assert.equal(mockRows.length,2);
+      assert.ok(mockRows.every(row => row.status === 'review'));
+      assert.equal(must(await service.from('offers').select('id').eq('deal_id',deal)).length,0);
+      for (const decision of ['approval','decline']) {
+        const reply = admin.locator('details').filter({ hasText: decision === 'approval' ? 'Suggested response · approved' : 'Suggested response · declined' });
+        await reply.locator('summary').click();
+        await reply.getByLabel('Review decision').selectOption(decision);
+        if (decision === 'approval') {
+          await reply.getByLabel('Approved amount').fill('20000');
+          await reply.getByLabel('Total payback').fill('25000');
+        }
+        await reply.getByLabel('I verified the sender, deal, and offer terms').check();
+        await reply.getByRole('button', { name:'Save reviewed response' }).click();
+        await admin.getByRole('status').getByText('Reviewed response recorded.').waitFor();
+      }
+      const reviewedOffers = must(await service.from('offers').select('decision,approval_amount').eq('deal_id',deal));
+      assert.deepEqual(reviewedOffers.map(offer => offer.decision).sort(), ['approval','decline']);
+      assert.equal(reviewedOffers.find(offer => offer.decision === 'approval').approval_amount, 20000);
+      const owner = await session(opener.email);
+      assert.equal(must(await owner.client.from('processing_funder_responses').select('id').in('id',mockRows.map(row => row.id))).length,0);
+      await admin.screenshot({path:join(process.env.QA_SCREENSHOT_DIR ?? '/tmp','processing-reply-review.png')});
+      await admin.goto(base+'/deals/'+deal);
+      console.log('PASS inbox duplicate prevention, human review, approved and declined DIP offers, and rep isolation.');
+    }
     must(await service.from('deals').update({ sales_test: false }).eq('id', deal));
     console.log('PASS admin package review, controlled email, partial batch failure, portal confirmation, DIP events and rep isolation.');
   }

@@ -335,6 +335,7 @@ export default async function DealDetailPage({
             company={deal.business_name} initial={financeValues}
             runs={(analyses.data ?? []).map(run => ({ ...run, summary: run.summary as FinancialSummary | null }))}
             mode={analysisMode()} readOnly={workspaceClosed} />
+          <Link href={`/admin/processing/responses?deal=${deal.id}`} className="inline-block text-sm text-primary hover:underline">Review incoming funder replies</Link>
           <FunderSubmissionsWorkspace dealId={deal.id} previews={submissionPreviews} routingResults={routingResults}
             documents={selectedPackageFiles(fileRows, fileRows.map(file => file.id)).filter(file => !['application', 'statement'].includes(file.file_type ?? ''))
               .map(file => ({ id: file.id, fileType: file.file_type, filename: originalFilename(file.path) }))}

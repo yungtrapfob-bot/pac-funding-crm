@@ -64,20 +64,23 @@ export function buildIdempotencyKey(dealId: string, funderId: string) {
 export function buildPreview(deal: Deal, funder: Funder, files: FileRow[], previous?: { status?: string | null; submitted_at?: string | null }, extraIds: string[] = []) {
   const vars = templateVariables(deal);
   const packageFiles = selectedPackageFiles(files, extraIds);
+  const reference = buildIdempotencyKey(deal.id, funder.id);
+  const body = renderTemplate(funder.body_template, vars)
+    + (funder.submission_method === 'email' ? `\n\nSubmission reference: PAC-${reference}` : '');
   return {
     funderId: funder.id,
     funderName: funder.funder_name ?? 'Unknown funder',
     method: funder.submission_method ?? 'tbd',
     verifiedAt: funder.verified_at ?? null, portalUrl: funder.portal_url ?? null,
     to: funder.primary_submission_email ?? '', cc: funder.submission_cc ?? '', bcc: funder.submission_bcc ?? '',
-    subject: renderTemplate(funder.subject_template, vars), body: renderTemplate(funder.body_template, vars),
+    subject: renderTemplate(funder.subject_template, vars), body,
     attachments: packageFiles.map(f => ({ id: f.id, fileType: f.file_type, filename: originalFilename(f.path) })),
     missingDocuments: missingRequiredDocs(funder, packageFiles), previousStatus: previous?.status ?? null, lastSubmittedAt: previous?.submitted_at ?? null,
-    idempotencyKey: buildIdempotencyKey(deal.id, funder.id),
+    idempotencyKey: reference,
     confirmationKey: createHash('sha256').update(JSON.stringify({
       id: deal.id, funder: funder.id, verifiedAt: funder.verified_at, method: funder.submission_method, portal: funder.portal_url,
       recipients: [funder.primary_submission_email, funder.submission_cc, funder.submission_bcc],
-      subject: renderTemplate(funder.subject_template, vars), body: renderTemplate(funder.body_template, vars),
+      subject: renderTemplate(funder.subject_template, vars), body,
       required: splitRequiredDocs(funder), files: packageFiles.map(file => [file.id, file.path]).sort(),
     })).digest('hex')
   };

@@ -13,7 +13,10 @@ export default async function ProcessingQueue({ searchParams }: { searchParams: 
   const selected = stage && intake.includes(stage) ? stage : undefined;
   const queue = await getProcessingQueue(selected);
   return <div className="space-y-4">
-    <h1 className="text-2xl font-semibold">Processing queue</h1>
+    <header className="flex flex-wrap items-center justify-between gap-2">
+      <h1 className="text-2xl font-semibold">Processing queue</h1>
+      <Link href="/admin/processing/responses" className="text-sm text-primary hover:underline">Funder responses</Link>
+    </header>
     <nav className="flex flex-wrap gap-2 text-sm">
       {[undefined,...intake].map(key => <Link href={key ? '/admin/processing?stage='+key : '/admin/processing'}
         key={key ?? 'all'} aria-current={selected === key ? 'page' : undefined}
